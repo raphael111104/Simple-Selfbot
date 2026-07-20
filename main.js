@@ -124,17 +124,11 @@ async function connectToWhatsApp() {
   });
 
   conn.ev.on('messages.upsert', async event => {
+    // Abaikan riwayat pesan lama saat koneksi ulang (history sync)
+    if (event.type === 'append') return;
+
     for (const rawMessage of event.messages || []) {
       if (!rawMessage?.message || rawMessage.key?.remoteJid === 'status@broadcast') continue;
-
-      const msgTimestamp = typeof rawMessage.messageTimestamp === 'number'
-        ? rawMessage.messageTimestamp
-        : (rawMessage.messageTimestamp?.low || rawMessage.messageTimestamp?.toNumber?.() || 0);
-
-      // Abaikan pesan yang masuk sebelum server dihidupkan
-      if (msgTimestamp > 0 && msgTimestamp < startTime - 5) {
-        continue;
-      }
 
       const msg = serialize(conn, rawMessage);
 
