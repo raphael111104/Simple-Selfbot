@@ -337,7 +337,7 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}reply\n`
           cptn += `• ${prefix}readmore\n`
           cptn += `• ${prefix}hidetag\n\n`
-          cptn += `${setting.wm}\n_Create by @Rafly͘~_\n_Since 01-12-2020_`
+          cptn += `${setting.wm}\n_Create by @Rafli A.~_\n_Since 01-12-2020_`
           adReply2(cptn, setting.wm, setting.botName)
         } else if (q.includes('owner')) {
           var cptn = `_Owner Tools_\n`

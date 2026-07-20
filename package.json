@@ -9,7 +9,7 @@
     "check": "node --check main.js && node --check conn.js && node --check function/profile-picture.js && node --check function/sticker.js && node --check function/youtube.js",
     "postinstall": "node scripts/verify-binaries.js"
   },
-  "author": "Rafly A.",
+  "author": "Rafli A.",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=20.9.0"

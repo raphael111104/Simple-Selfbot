@@ -31,7 +31,7 @@ let currentSocket;
 function title() {
   if (process.stdout.isTTY) console.clear();
   console.log('----------------------------------------------------');
-  lolcatjs.fromString(chalk.cyan(figlet.textSync('Rafly', {
+  lolcatjs.fromString(chalk.cyan(figlet.textSync('Rafli A.', {
     font: 'Bloody',
     horizontalLayout: 'full',
     verticalLayout: 'full',
@@ -40,7 +40,7 @@ function title() {
   console.log('----------------------------------------------------');
   lolcatjs.fromString('[SERVER STARTED]');
   console.log('----------------------------------------------------');
-  lolcatjs.fromString('Created by Rafly');
+  lolcatjs.fromString('Created by Rafli A.');
   console.log('----------------------------------------------------');
 }
 
