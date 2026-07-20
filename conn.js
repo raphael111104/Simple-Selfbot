@@ -65,45 +65,57 @@ module.exports = async (conn, msg, m, setting, store) => {
     const botNumber = conn.user.id.split(':')[0] + '@s.whatsapp.net'
     const isBotGroupAdmins = groupAdmins.includes(botNumber) || false
 
-    const botNum = conn.user?.id ? conn.user.id.split('@')[0].split(':')[0] : ''
-    const botPhoneJid = botNum ? `${botNum}@s.whatsapp.net` : ''
-
     const initialSender = msg.key.fromMe
-      ? (botPhoneJid || (conn.user.id.split(':')[0] + '@s.whatsapp.net'))
+      ? (`${setting.ownerNumber}@s.whatsapp.net`)
       : (msg.sender || (isGroup ? (msg.key.participant || msg.participant) : msg.key.remoteJid))
 
-    let realSenderJid = conn.decodeJid(initialSender)
-    let phoneNumStr = ''
+    function formatPhoneNumber(jid, isFromMe, groupList = []) {
+      if (isFromMe) {
+        const ownerNum = setting.ownerNumber ? setting.ownerNumber.replace(/[^0-9]/g, '') : '';
+        if (ownerNum) return `+${ownerNum}`;
+      }
 
-    if (msg.key.fromMe && botNum && /^[0-9]{7,15}$/.test(botNum)) {
-      phoneNumStr = `+${botNum}`
-    } else {
-      if (groupMembers && groupMembers.length > 0) {
-        const found = groupMembers.find(p => p.id === initialSender || p.lid === initialSender || p.id === realSenderJid || p.lid === realSenderJid)
+      if (!jid) return '';
+      const cleanJid = jid.split(':')[0].trim();
+      const numOnly = cleanJid.split('@')[0].replace(/[^0-9]/g, '');
+
+      if (groupList && groupList.length > 0) {
+        const found = groupList.find(p => 
+          p.id === jid || p.lid === jid || 
+          p.id === cleanJid || p.lid === cleanJid ||
+          (p.id && p.id.split('@')[0] === numOnly) ||
+          (p.lid && p.lid.split('@')[0] === numOnly)
+        );
         if (found) {
-          const target = found.pn || (found.id?.endsWith('@s.whatsapp.net') ? found.id : '')
-          if (target) {
-            const num = target.split('@')[0].split(':')[0]
-            if (/^[0-9]{7,15}$/.test(num)) {
-              phoneNumStr = `+${num}`
-              realSenderJid = `${num}@s.whatsapp.net`
-            }
+          const pnJid = found.pn || (found.id && found.id.endsWith('@s.whatsapp.net') ? found.id : '');
+          if (pnJid) {
+            const pNum = pnJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            if (pNum && pNum.length <= 15) return `+${pNum}`;
           }
         }
       }
 
-      if (!phoneNumStr) {
-        const num = realSenderJid ? realSenderJid.split('@')[0].split(':')[0] : ''
-        if (num && /^[0-9]{7,15}$/.test(num)) {
-          phoneNumStr = `+${num}`
-        } else {
-          phoneNumStr = num ? (num.startsWith('+') ? num : `+${num}`) : ''
+      if (conn.contacts) {
+        const contact = conn.contacts[jid] || conn.contacts[cleanJid];
+        if (contact) {
+          const cJid = contact.id || contact.jid || '';
+          if (cJid.endsWith('@s.whatsapp.net')) {
+            const cNum = cJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            if (cNum && cNum.length <= 15) return `+${cNum}`;
+          }
         }
       }
+
+      if (numOnly.length >= 7 && numOnly.length <= 15) {
+        return `+${numOnly}`;
+      }
+
+      return numOnly ? `+${numOnly}` : '';
     }
 
+    const realSenderJid = conn.decodeJid(initialSender)
+    const senderPhone = formatPhoneNumber(initialSender, msg.key.fromMe, groupMembers)
     const sender = realSenderJid
-    const senderPhone = phoneNumStr
     const isOwner = [`${setting.ownerNumber}@s.whatsapp.net`].includes(sender) ? true : false
     const pushname = msg.pushName
     const senderDisplay = pushname ? `${pushname} (${senderPhone})` : senderPhone
