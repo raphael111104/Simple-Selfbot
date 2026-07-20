@@ -71,6 +71,7 @@ exports.serialize = (conn, msg) => {
   msg.from = msg.key.remoteJid;
   msg.now = msg.messageTimestamp;
   msg.fromMe = msg.key.fromMe;
+  msg.expiration = msg.message?.ephemeralMessage?.expiration || msg.message?.[msg.type]?.contextInfo?.expiration || 0;
 
   return msg;
 };
