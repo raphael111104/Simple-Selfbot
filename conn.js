@@ -12,7 +12,6 @@ const { webp2mp4File } = require("./function/Webp_Tomp4")
 //module
 const { File } = require("megajs")
 const { downloadYouTube, searchYouTube } = require('./function/youtube')
-const { downloadInstagram } = require('./function/instagram')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
@@ -353,8 +352,6 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}ytmp3\n`
           cptn += `• ${prefix}ytmp4\n`
           cptn += `• ${prefix}tiktok\n`
-          cptn += `• ${prefix}igdl\n`
-          cptn += `• ${prefix}instagramdl\n`
           cptn += `• ${prefix}mediafire\n`
           cptn += `• ${prefix}mega\n\n`
           cptn += `_Tools_\n`
@@ -487,33 +484,6 @@ https://github.com/dragneel1111/Simple-Selfbot
             caption: cptn,
           },
             { quoted: msg })
-        }
-        break
-
-      case 'igdl':
-      case 'instagramdl':
-      case 'ig':
-      case 'instagram':
-        if (!q) return reply(`Contoh penggunaan:\n${prefix + command} https://www.instagram.com/p/DB1n-K1yT5P/`)
-        if (!isUrl(q) || !q.includes('instagram.com')) return reply('URL tidak valid! Masukkan link postingan, reel, atau carousel Instagram.')
-
-        reply('*_Mohon tunggu sebentar, sedang mengunduh media Instagram..._*')
-        try {
-          const mediaResults = await downloadInstagram(q)
-          if (!mediaResults || mediaResults.length === 0) {
-            return reply('Gagal mengambil media dari link Instagram tersebut. Pastikan postingan publik!')
-          }
-
-          for (const item of mediaResults) {
-            if (item.type === 'video') {
-              await conn.sendMessage(from, { video: { url: item.url }, caption: setting.wm }, { quoted: msg })
-            } else {
-              await conn.sendMessage(from, { image: { url: item.url }, caption: setting.wm }, { quoted: msg })
-            }
-            await sleep(500)
-          }
-        } catch (err) {
-          reply(`Terjadi kesalahan saat mendownload Instagram:\n${err.message}`)
         }
         break
 
