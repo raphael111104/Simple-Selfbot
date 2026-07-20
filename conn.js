@@ -150,13 +150,13 @@ module.exports = async (conn, msg, m, setting, store) => {
 
     const reply = (teks) => { conn.sendMessage(from, { text: teks }, { quoted: msg }) }
 
-    const adReply = async (teks, judul, isi, quo = msg) => {
-      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : msg;
+    const adReply = async (teks, judul = setting.wm, isi = setting.botName, quo) => {
+      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : fstatus;
       return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
     }
 
-    const adReply2 = async (teks, judul, isi, quo = msg) => {
-      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : msg;
+    const adReply2 = async (teks, judul = setting.wm, isi = setting.botName, quo) => {
+      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : fstatus;
       return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
     }
 
@@ -326,6 +326,9 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}setppbot\n`
           cptn += `• ${prefix}infogroup\n`
           cptn += `• ${prefix}reply\n`
+          cptn += `• ${prefix}fakeorder\n`
+          cptn += `• ${prefix}fakelocation\n`
+          cptn += `• ${prefix}forward\n`
           cptn += `• ${prefix}readmore\n`
           cptn += `• ${prefix}hidetag\n\n`
           cptn += `${setting.wm}\n_Create by @Rafli A.~_\n_Since 01-12-2020_`
@@ -600,6 +603,48 @@ _Wait Mengirim file..._
         ]))
 
         await conn.sendMessage(from, { text: bot, mentions: allMentions }, { quoted: fakeQuoted })
+        break
+
+      case 'fakeorder':
+      case 'fake':
+        conn.sendMessage(from, {
+          orderMessage: {
+            itemCount: 1,
+            status: 1,
+            surface: 1,
+            message: q ? q : setting.wm,
+            orderTitle: setting.botName,
+            sellerJid: '0@s.whatsapp.net',
+            totalAmount1000: 999000,
+            totalCurrencyCode: 'IDR',
+            jpegThumbnail: fs.existsSync('./sticker/thumb.jpg') ? fs.readFileSync('./sticker/thumb.jpg') : null
+          }
+        }, { quoted: msg })
+        break
+
+      case 'fakeloc':
+      case 'fakelocation':
+        conn.sendMessage(from, {
+          location: {
+            degreesLatitude: -6.200000,
+            degreesLongitude: 106.816666,
+            name: q ? q : setting.wm,
+            address: 'Jakarta, Indonesia',
+            jpegThumbnail: fs.existsSync('./sticker/thumb.jpg') ? fs.readFileSync('./sticker/thumb.jpg') : null
+          }
+        }, { quoted: msg })
+        break
+
+      case 'forward':
+      case 'fwd':
+        if (!q) return reply(`Contoh: ${prefix + command} Teks yang ingin diteruskan`)
+        conn.sendMessage(from, {
+          text: q,
+          contextInfo: {
+            isForwarded: true,
+            forwardingScore: 9999
+          }
+        }, { quoted: msg })
         break
 
 

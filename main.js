@@ -21,9 +21,34 @@ const botLogger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 const sessionPath = path.join(__dirname, 'sessions');
 const usePairingCode = !process.argv.includes('--qr');
 const useStore = !process.argv.includes('--no-store');
-const messageHandler = require('./conn');
+let messageHandler = require('./conn');
 
-const startTime = Math.floor(Date.now() / 1000);
+function nocache(moduleName, callback = () => {}) {
+  try {
+    const filePath = require.resolve(moduleName);
+    fs.watchFile(filePath, { interval: 500 }, () => {
+      delete require.cache[filePath];
+      callback(filePath);
+    });
+  } catch (e) {}
+}
+
+nocache('./conn', (file) => {
+  try {
+    messageHandler = require('./conn');
+    console.log(chalk.green.bold(`⚡ [HOT RELOAD] File '${path.basename(file)}' was updated and reloaded!`));
+  } catch (error) {
+    console.error(chalk.red.bold(`❌ [HOT RELOAD ERROR] Could not reload '${path.basename(file)}':`), error.message);
+  }
+});
+
+nocache('./config.json', () => {
+  try {
+    const freshSetting = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
+    Object.assign(setting, freshSetting);
+    console.log(chalk.green.bold(`⚡ [HOT RELOAD] Config 'config.json' reloaded!`));
+  } catch (e) {}
+});
 
 let baileys;
 let currentSocket;
