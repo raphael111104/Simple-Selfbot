@@ -61,4 +61,29 @@ async function downloadYouTube(url, type) {
   }
 }
 
-module.exports = { downloadYouTube };
+async function searchYouTube(query) {
+  const args = [
+    '--flat-playlist',
+    '--dump-single-json',
+    '--no-warnings',
+    '--js-runtimes', 'node',
+    `ytsearch10:${query}`
+  ];
+
+  const { stdout } = await execFileAsync(youtubeDlPath, args, {
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: 30 * 1000,
+    windowsHide: true
+  });
+
+  const data = JSON.parse(stdout);
+  return (data.entries || []).map(item => ({
+    title: item.title || 'Untitled',
+    durationH: item.duration ? `${Math.floor(item.duration / 60)}:${String(Math.floor(item.duration % 60)).padStart(2, '0')}` : 'N/A',
+    publishedTime: item.upload_date ? `${item.upload_date.slice(0, 4)}-${item.upload_date.slice(4, 6)}-${item.upload_date.slice(6, 8)}` : 'N/A',
+    viewH: item.view_count ? item.view_count.toLocaleString() : 'N/A',
+    url: item.url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : '')
+  })).filter(item => item.url && item.url.includes('watch?v='));
+}
+
+module.exports = { downloadYouTube, searchYouTube };

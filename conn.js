@@ -11,8 +11,7 @@ const { webp2mp4File } = require("./function/Webp_Tomp4")
 
 //module
 const { File } = require("megajs")
-const { facebookdl, snapsave, youtubeSearch } = require("@bochilteam/scraper")
-const { downloadYouTube } = require('./function/youtube')
+const { downloadYouTube, searchYouTube } = require('./function/youtube')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
@@ -338,14 +337,11 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}ytsearch\n`
           cptn += `• ${prefix}ytmp3\n`
           cptn += `• ${prefix}ytmp4\n`
-          cptn += `• ${prefix}facebook\n`
-          cptn += `• ${prefix}instagram\n`
           cptn += `• ${prefix}tiktok\n`
           cptn += `• ${prefix}mediafire\n`
           cptn += `• ${prefix}mega\n\n`
           cptn += `_Tools_\n`
           cptn += `• ${prefix}creator\n`
-          cptn += `• ${prefix}setppbot\n`
           cptn += `• ${prefix}setppbot\n`
           cptn += `• ${prefix}infogroup\n`
           cptn += `• ${prefix}reply\n`
@@ -382,36 +378,10 @@ https://github.com/dragneel1111/Simple-Selfbot
         }, { quoted: msg })
         break
 
-      case 'facebook':
-      case 'fbdl':
-      case 'fb':
-        if (!q) return reply(`example:\n${prefix + command} https://www.facebook.com/groups/1821107578248933/permalink/1951979891828367/`)
-        var data = await facebookdl(q)
-        const facebookVideo = data.video.find(item => /hd/i.test(item.quality)) || data.video[0]
-        if (!facebookVideo) return reply('Video Facebook tidak ditemukan atau tidak dapat diakses')
-        var hasil = await getBuffer(await facebookVideo.download())
-        await conn.sendMessage(from, { video: hasil }, { quoted: msg })
-        break
-
-      case 'instagram':
-      case 'igdl':
-      case 'ig':
-        if (!q) return reply(`example:\n${prefix + command} https://www.instagram.com/p/C036XZdvBI2/?igsh=MzRlODBiNWFlZA==`)
-        var data = await snapsave(q)
-        if (!data.results?.length) return reply('Media Instagram tidak ditemukan')
-        for (const item of data.results.slice(0, 10)) {
-          var hasil = await getBuffer(item.url)
-          const isMp4 = hasil?.subarray(4, 12).toString().includes('ftyp')
-          await conn.sendMessage(from, {
-            [isMp4 ? "video" : "image"]: hasil,
-          }, { quoted: msg })
-        }
-        break
-
       case 'play':
       case 'ytplay':
         if (!q) return reply(`example:\n${prefix + command} kokoronashi`)
-        var ytplay = (await youtubeSearch(q)).video
+        var ytplay = await searchYouTube(q)
         if (!ytplay.length) return reply('Video tidak ditemukan')
         var hasil = await downloadYouTube(ytplay[0].url, 'audio')
         await conn.sendMessage(from, {
@@ -448,7 +418,8 @@ https://github.com/dragneel1111/Simple-Selfbot
       case 'ytsearch':
       case 'yts':
         if (!q) return reply(`example:\n${prefix + command} Tekotok`)
-        var data = (await youtubeSearch(q)).video
+        var data = await searchYouTube(q)
+        if (!data.length) return reply('Video tidak ditemukan')
         var cptn = `_*Result of ${q}*_\n\n`
         for (let y of data) {
           cptn += `• title: ${y.title}\n`
