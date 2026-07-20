@@ -150,47 +150,14 @@ module.exports = async (conn, msg, m, setting, store) => {
 
     const reply = (teks) => { conn.sendMessage(from, { text: teks }, { quoted: msg }) }
 
-    const adReply = async (teks, judul = setting.wm, isi = setting.botName, quo = msg) => {
+    const adReply = async (teks, judul, isi, quo = msg) => {
       const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : msg;
-      conn.sendMessage(from, {
-        text: teks,
-        contextInfo: {
-          "externalAdReply":
-          {
-            showAdAttribution: true,
-            title: String(judul || setting.wm),
-            body: String(isi || setting.botName),
-            mediaType: 1,
-            thumbnail: fs.readFileSync('./sticker/adreply.jpg'),
-            sourceUrl: 'https://github.com/dragneel1111/Simple-Selfbot'
-          }
-        }
-      },
-        {
-          quoted: validQuoted
-        })
+      return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
     }
 
-    const adReply2 = async (teks, judul = setting.wm, isi = setting.botName, quo = msg) => {
+    const adReply2 = async (teks, judul, isi, quo = msg) => {
       const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : msg;
-      conn.sendMessage(from, {
-        text: teks,
-        contextInfo: {
-          "externalAdReply":
-          {
-            showAdAttribution: true,
-            title: String(judul || setting.wm),
-            body: String(isi || setting.botName),
-            mediaType: 1,
-            renderLargerThumbnail: true,
-            thumbnail: fs.readFileSync('./sticker/menu.jpg'),
-            sourceUrl: 'https://github.com/dragneel1111/Simple-Selfbot'
-          }
-        }
-      },
-        {
-          quoted: validQuoted
-        })
+      return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
     }
 
     const fstatus = {
