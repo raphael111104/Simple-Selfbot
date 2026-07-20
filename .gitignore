@@ -1,0 +1,7 @@
+node_modules/
+sessions/
+*.log
+sticker/*.mp3
+sticker/*.mp4
+sticker/*.webp
+sticker/*.jpeg

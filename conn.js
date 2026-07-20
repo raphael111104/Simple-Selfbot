@@ -1,15 +1,6 @@
-﻿﻿"use strict";
-const { BufferJSON,
-  WA_DEFAULT_EPHEMERAL,
-  proto,
-  prepareWAMessageMedia,
-  areJidsSameUser,
-  getContentType } = require('@adiwajshing/baileys')
-const { downloadContentFromMessage,
-  generateWAMessage,
-  generateWAMessageFromContent,
-  MessageType } = require("@adiwajshing/baileys")
-const { exec, spawn } = require("child_process");
+"use strict";
+const { execFile } = require("child_process");
+const ffmpegPath = require('ffmpeg-static');
 const { color, bgcolor, pickRandom, randomNomor } = require('./function/Data_Server_Bot/Console_Data')
 const { removeEmojis, bytesToSize, getBuffer, fetchJson, getRandom, getGroupAdmins, runtime, sleep, makeid, isUrl } = require("./function/func_Server");
 const { TelegraPh } = require("./function/uploader_Media");
@@ -19,21 +10,18 @@ const { mediafireDl } = require('./function/scrape_Mediafire')
 const { webp2mp4File } = require("./function/Webp_Tomp4")
 
 //module
-const { youtube, facebook } = require("@xct007/frieren-scraper")
 const { File } = require("megajs")
-const { youtubedl, snapsave } = require("@bochilteam/scraper")
+const { facebookdl, snapsave, youtubeSearch } = require("@bochilteam/scraper")
+const { downloadYouTube } = require('./function/youtube')
+const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
 const ms = require("ms");
 const chalk = require('chalk');
 const axios = require("axios");
-const qs = require("querystring");
-const fetch = require("node-fetch");
-const colors = require('colors/safe');
-const ffmpeg = require("fluent-ffmpeg");
 const moment = require("moment-timezone");
 const util = require("util");
-const { Sticker, StickerTypes } = require('wa-sticker-formatter');
+const { createSticker } = require('./function/sticker');
 
 
 // DB
@@ -44,8 +32,7 @@ const db_respon_list = db_respon_list_JSON
 moment.tz.setDefault("Asia/Jakarta").locale("id");
 module.exports = async (conn, msg, m, setting, store) => {
   try {
-    const { type, quotedMsg, mentioned, now, fromMe, isBaileys } = msg
-    if (msg.isBaileys) return
+    const { type, quotedMsg, mentioned, now, fromMe } = msg
     const jam = moment.tz('asia/jakarta').format('HH:mm:ss')
     const tanggal = moment().tz("Asia/Jakarta").format("ll")
     let dt = moment(Date.now()).tz('Asia/Jakarta').locale('id').format('a')
@@ -56,23 +43,30 @@ module.exports = async (conn, msg, m, setting, store) => {
     if (chats == undefined) { chats = 'undefined' }
     const prefix = setting.prefix
     const isGroup = msg.key.remoteJid.endsWith('@g.us')
-    const sender = isGroup ? (msg.key.participant ? msg.key.participant : msg.participant) : msg.key.remoteJid
+    const rawSender = msg.key.fromMe
+      ? (conn.user.id.split(':')[0] + '@s.whatsapp.net')
+      : (msg.sender || (isGroup ? (msg.key.participant || msg.participant) : msg.key.remoteJid))
+    const sender = conn.decodeJid(rawSender)
+    const senderNum = sender ? sender.split('@')[0].split(':')[0] : ''
+    const senderPhone = senderNum ? (senderNum.startsWith('+') ? senderNum : `+${senderNum}`) : ''
     const isOwner = [`${setting.ownerNumber}@s.whatsapp.net`].includes(sender) ? true : false
     const pushname = msg.pushName
+    const senderDisplay = pushname ? `${pushname} (${senderPhone})` : senderPhone
     const body = chats.startsWith(prefix) ? chats : ''
     const args = body.trim().split(/ +/).slice(1);
     const q = args.join(" ");
     const isCommand = body.startsWith(prefix);
-    const command = body.slice(1).trim().split(/ +/).shift().toLowerCase()
-    const isCmd = isCommand ? body.slice(1).trim().split(/ +/).shift().toLowerCase() : null;
+    const commandText = body.slice(prefix.length).trim()
+    const command = commandText.split(/ +/).shift().toLowerCase()
+    const isCmd = isCommand ? command : null;
     const botNumber = conn.user.id.split(':')[0] + '@s.whatsapp.net'
 
-    const groupMetadata = isGroup ? await conn.groupMetadata(from) : ''
-    const groupName = isGroup ? groupMetadata.subject : ''
-    const groupId = isGroup ? groupMetadata.id : ''
-    const participants = isGroup ? await groupMetadata.participants : ''
-    const groupMembers = isGroup ? groupMetadata.participants : ''
-    const groupAdmins = isGroup ? getGroupAdmins(groupMembers) : ''
+    const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => ({})) : {}
+    const groupName = isGroup ? (groupMetadata.subject || '') : ''
+    const groupId = isGroup ? (groupMetadata.id || '') : ''
+    const groupMembers = isGroup ? (groupMetadata.participants || []) : []
+    const participants = groupMembers
+    const groupAdmins = isGroup ? getGroupAdmins(groupMembers) : []
     const isBotGroupAdmins = groupAdmins.includes(botNumber) || false
     const isGroupAdmins = groupAdmins.includes(sender)
 
@@ -224,34 +218,47 @@ module.exports = async (conn, msg, m, setting, store) => {
     // presence update
     // await conn.sendPresenceUpdate('unavailable', from)
 
-    // Logs cmd
+    // Terminal Logger
+    const timeFormatted = moment(msg.messageTimestamp ? msg.messageTimestamp * 1000 : Date.now()).format('DD/MM/YYYY HH:mm:ss')
+    const formattedChats = chats ? chats.replace(/\n/g, '\n│          ') : ''
+
+    // Logs Command (RED)
     if (isCmd && fromMe) {
-      var txt = color('──────────────────> COMMAND') + "\n"
-      txt += `• Time  : ` + color(moment(msg.messageTimestamp * 1000).format('DD/MM/YYYY HH:mm:ss'), 'white') + "\n"
-      txt += `• From  : ` + color(sender) + " as " + color(pushname) + "\n"
-      txt += `• In    : ` + color(from) + "\n"
-      txt += `• Cmd   : ` + color(`${command} [${args.length}]`) + "\n"
-      txt += color('────────────────────────────>') + "\n"
-      console.log(txt)
+      let logTxt = chalk.red('╭──────────────────────────────────────────────────╮') + '\n'
+      logTxt += chalk.red('│') + chalk.red.bold('              ⚡ COMMAND DETECTED                 ') + chalk.red('│') + '\n'
+      logTxt += chalk.red('├──────────────────────────────────────────────────┤') + '\n'
+      logTxt += chalk.red('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
+      logTxt += chalk.red('│') + chalk.white(` 👤 From   : ${senderDisplay}`) + '\n'
+      logTxt += chalk.red('│') + chalk.white(` 📍 In     : ${isGroup ? (groupName || 'Group Chat') : 'Personal Chat'}`) + '\n'
+      logTxt += chalk.red('│') + chalk.red.bold(` 🎯 Cmd    : ${prefix}${command}`) + chalk.gray(` [${args.length} args]`) + '\n'
+      if (q) logTxt += chalk.red('│') + chalk.yellow(` 💬 Input  : ${q}`) + '\n'
+      logTxt += chalk.red('╰──────────────────────────────────────────────────╯')
+      console.log(logTxt)
     }
 
-    // Logs chats
-    if (!isGroup && chats && !isSticker && !isMedia) {
-      var txt = color('──────────────────> Personal Chat', 'red') + "\n"
-      txt += `• Time  : ` + color(moment(msg.messageTimestamp * 1000).format('DD/MM/YYYY HH:mm:ss'), 'white') + "\n"
-      txt += `• From  : ` + color(sender) + " as " + color(pushname) + "\n"
-      txt += `• Text  : ` + color(`${chats}`, 'yellow') + "\n"
-      txt += color('─────────────────────────────────>', 'red') + "\n"
-      console.log(txt)
+    // Logs Personal Chat (BLUE)
+    if (!isCmd && !isGroup && chats && chats !== 'undefined' && !isSticker && !isMedia) {
+      let logTxt = chalk.blue('╭──────────────────────────────────────────────────╮') + '\n'
+      logTxt += chalk.blue('│') + chalk.blue.bold('             💬 PERSONAL CHAT LOG                 ') + chalk.blue('│') + '\n'
+      logTxt += chalk.blue('├──────────────────────────────────────────────────┤') + '\n'
+      logTxt += chalk.blue('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
+      logTxt += chalk.blue('│') + chalk.white(` 👤 From   : ${senderDisplay}`) + '\n'
+      logTxt += chalk.blue('│') + chalk.cyan(` 💬 Text   : ${formattedChats}`) + '\n'
+      logTxt += chalk.blue('╰──────────────────────────────────────────────────╯')
+      console.log(logTxt)
     }
-    if (isGroup && chats && !isSticker && !isMedia) {
-      var txt = "\n" + color('──────────────────> GROUP CHAT', 'yellow') + "\n"
-      txt += `• Time  : ` + color(moment(msg.messageTimestamp * 1000).format('DD/MM/YYYY HH:mm:ss'), 'white') + "\n"
-      txt += `• From  : ` + color(sender) + " as " + color(pushname) + "\n"
-      txt += `• Group : ` + color(from) + " as " + color(groupName) + "\n"
-      txt += `• Text  : ` + color(`${chats}`, 'yellow') + "\n"
-      txt += color('──────────────────────────────>', 'yellow') + "\n"
-      console.log(txt)
+
+    // Logs Group Chat (YELLOW)
+    if (!isCmd && isGroup && chats && chats !== 'undefined' && !isSticker && !isMedia) {
+      let logTxt = chalk.yellow('╭──────────────────────────────────────────────────╮') + '\n'
+      logTxt += chalk.yellow('│') + chalk.yellow.bold('             👥 GROUP CHAT LOG                    ') + chalk.yellow('│') + '\n'
+      logTxt += chalk.yellow('├──────────────────────────────────────────────────┤') + '\n'
+      logTxt += chalk.yellow('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
+      logTxt += chalk.yellow('│') + chalk.white(` 👤 Sender : ${senderDisplay}`) + '\n'
+      logTxt += chalk.yellow('│') + chalk.white(` 🏘️ Group  : ${groupName || 'Group Chat'}`) + '\n'
+      logTxt += chalk.yellow('│') + chalk.yellowBright(` 💬 Text   : ${formattedChats}`) + '\n'
+      logTxt += chalk.yellow('╰──────────────────────────────────────────────────╯')
+      console.log(logTxt)
     }
 
     if (!fromMe) return
@@ -340,7 +347,6 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}setthumb\n`
           cptn += `• ${prefix}error\n`
           cptn += `• ${prefix}clear\n`
-          cptn += `• ${prefix}sendsesi\n`
           cptn += `• ${prefix}addrespon\n`
           cptn += `• ${prefix}delrespon\n`
           adReply(cptn, tanggal, jam)
@@ -355,29 +361,22 @@ https://github.com/dragneel1111/Simple-Selfbot
         if (file.size >= 300000000) return adReply('Minimum Size: 300MB', 'Error: file size is too large ')
         adReply(`*_Please wait a few minutes..._*`, file.name, 'downloading...')
         var data = await file.downloadBuffer()
-        if (/mp4/.test(data)) {
-          await conn.sendMessage(from, { document: data, mimetype: "video/mp4", fileName: `${file.name}.mp4` }, { quoted: msg })
-        } else if (/pdf/.test(data)) {
-          await conn.sendMessage(from, { document: data, mimetype: "application/pdf", fileName: `${file.name}.pdf` }, { quoted: msg })
-        }
+        await conn.sendMessage(from, {
+          document: data,
+          mimetype: file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+          fileName: file.name
+        }, { quoted: msg })
         break
 
       case 'facebook':
       case 'fbdl':
       case 'fb':
         if (!q) return reply(`example:\n${prefix + command} https://www.facebook.com/groups/1821107578248933/permalink/1951979891828367/`)
-        var data = await facebook.v1(q)
-        try {
-          var hasil = await getBuffer(data.urls[0].hd)
-          await conn.sendMessage(from, {
-            video: hasil,
-          }, { quoted: msg })
-        } catch (err) {
-          var hasil = await getBuffer(data.urls[1].sd)
-          await conn.sendMessage(from, {
-            video: hasil,
-          }, { quoted: msg })
-        }
+        var data = await facebookdl(q)
+        const facebookVideo = data.video.find(item => /hd/i.test(item.quality)) || data.video[0]
+        if (!facebookVideo) return reply('Video Facebook tidak ditemukan atau tidak dapat diakses')
+        var hasil = await getBuffer(await facebookVideo.download())
+        await conn.sendMessage(from, { video: hasil }, { quoted: msg })
         break
 
       case 'instagram':
@@ -385,64 +384,63 @@ https://github.com/dragneel1111/Simple-Selfbot
       case 'ig':
         if (!q) return reply(`example:\n${prefix + command} https://www.instagram.com/p/C036XZdvBI2/?igsh=MzRlODBiNWFlZA==`)
         var data = await snapsave(q)
-        var hasil = await getBuffer(data[0].url)
-        await conn.sendMessage(from, {
-          [(/mp4/.test(hasil)) ? "video" : "image"]: hasil,
-        }, { quoted: msg })
+        if (!data.results?.length) return reply('Media Instagram tidak ditemukan')
+        for (const item of data.results.slice(0, 10)) {
+          var hasil = await getBuffer(item.url)
+          const isMp4 = hasil?.subarray(4, 12).toString().includes('ftyp')
+          await conn.sendMessage(from, {
+            [isMp4 ? "video" : "image"]: hasil,
+          }, { quoted: msg })
+        }
         break
 
       case 'play':
       case 'ytplay':
         if (!q) return reply(`example:\n${prefix + command} kokoronashi`)
-        var ytplay = await youtube.search(q)
-        var data = await youtubedl(ytplay[6].url)
-        var url = await data.audio['128kbps'].download()
-        var hasil = await getBuffer(url)
+        var ytplay = (await youtubeSearch(q)).video
+        if (!ytplay.length) return reply('Video tidak ditemukan')
+        var hasil = await downloadYouTube(ytplay[0].url, 'audio')
         await conn.sendMessage(from, {
           document: hasil,
-          mimetype: "audio/mp4",
-          fileName: `${data.title}.mp3`,
+          mimetype: "audio/mpeg",
+          fileName: `${ytplay[0].title}.mp3`,
           jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg'),
         }, { quoted: msg })
-        await conn.sendMessage(from, { audio: hasil, mimetype: "audio/mp4" }, { quoted: msg })
+        await conn.sendMessage(from, { audio: hasil, mimetype: "audio/mpeg" }, { quoted: msg })
         break
 
       case 'ytmp3':
       case 'mp3':
         if (!q) return reply(`example\n${prefix + command} https://youtu.be/Pp2p4WABjos`)
-        var data = await youtubedl(q)
-        var url = await data.audio['128kbps'].download()
-        var hasil = await getBuffer(url)
+        var hasil = await downloadYouTube(q, 'audio')
         await conn.sendMessage(from, {
           document: hasil,
-          mimetype: "audio/mp4",
-          fileName: `${data.title}.mp3`,
+          mimetype: "audio/mpeg",
+          fileName: `youtube-audio.mp3`,
           jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg'),
         }, { quoted: msg })
         await sleep(500)
-        await conn.sendMessage(from, { audio: hasil, mimetype: "audio/mp4" }, { quoted: msg })
+        await conn.sendMessage(from, { audio: hasil, mimetype: "audio/mpeg" }, { quoted: msg })
         break
       case 'ytmp4':
       case 'mp4':
         if (!q) return reply(`example\n${prefix + command} https://youtu.be/Pp2p4WABjos`)
-        var data = await youtubedl(q)
-        var url = await data.video['auto'].download()
-        var hasil = await getBuffer(url)
+        var hasil = await downloadYouTube(q, 'video')
         await conn.sendMessage(from, {
           video: hasil,
-          caption: data.title,
+          caption: 'YouTube video',
         }, { quoted: msg })
         break
       case 'ytsearch':
       case 'yts':
         if (!q) return reply(`example:\n${prefix + command} Tekotok`)
-        var data = await youtube.search(q)
+        var data = (await youtubeSearch(q)).video
         var cptn = `_*Result of ${q}*_\n\n`
         for (let y of data) {
           cptn += `• title: ${y.title}\n`
-          cptn += `• duration: ${y.duration}\n`
-          cptn += `• uploaded: ${y.uploaded}\n`
-          cptn += `• views: ${y.views}\n`
+          cptn += `• duration: ${y.durationH}\n`
+          cptn += `• uploaded: ${y.publishedTime}\n`
+          cptn += `• views: ${y.viewH}\n`
           cptn += `• url: ${y.url}\n\n`
         }
         adReply(cptn, q, 'Youtube Search', msg)
@@ -451,7 +449,7 @@ https://github.com/dragneel1111/Simple-Selfbot
       case 'tiktok':
       case 'tt':
         if (!q) return reply(`example :\n${prefix + command} https://vt.tiktok.com/ZSN7Lf1dg/`)
-        var data = await fetchJson(`https://www.tikwm.com/api/?url=${q}?hd=1`)
+        var data = await fetchJson(`https://www.tikwm.com/api/?url=${encodeURIComponent(q)}&hd=1`)
         hasil = data.data
         try {
           var url = data.data.images
@@ -491,7 +489,7 @@ https://github.com/dragneel1111/Simple-Selfbot
         if (!q) return reply('*example:*\n#mediafire https://www.mediafire.com/file/451l493otr6zca4/V4.zip/file')
         let isLinks = q.match(/(?:https?:\/{2})?(?:w{3}\.)?mediafire(?:com)?\.(?:com|be)(?:\/www\?v=|\/)([^\s&]+)/)
         if (!isLinks) return reply('Invalid Link')
-        let baby1 = await mediafireDl(`${isLinks}`)
+        let baby1 = await mediafireDl(isLinks[0])
         if (baby1[0].size.split('MB')[0] >= 1500) return reply('File Melebihi Batas ' + util.format(baby1))
         let result4 = `*MEDIAFIRE DOWNLOADER*
 
@@ -528,49 +526,31 @@ _Wait Mengirim file..._
       case 'setppbot':
       case 'setpp':
       case 'spb':
-        if (isImage && isQuotedImage) return
+        if (!isImage && !isQuotedImage) return reply(`Kirim atau balas gambar dengan caption ${prefix + command}`)
         await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split('@')[0]}.jpg`)
         var media = `./sticker/${sender.split('@')[0]}.jpg`
-        var { img } = await conn.generateProfilePicture(media)
-        await conn.query({
-          tag: 'iq',
-          attrs: {
-            to: botNumber,
-            type: 'set',
-            xmlns: 'w:profile:picture'
-          },
-          content: [
-            {
-              tag: 'picture',
-              attrs: { type: 'image' },
-              content: img
-            }
-          ]
-        })
-        await sleep(2000)
-        fs.unlinkSync(media)
+        try {
+          await updateFullProfilePicture(conn, botNumber, media)
+          reply('Foto profil berhasil diperbarui')
+        } finally {
+          if (fs.existsSync(media)) fs.unlinkSync(media)
+        }
         break
       case 'setprefix':
+        if (!args[0]) return reply(`Gunakan ${prefix + command} <prefix-baru>`)
         setting.prefix = args[0]
         fs.writeFileSync('./config.json', JSON.stringify(setting, null, 2))
         reply('done')
         break
       case 'mysesi': case 'sendsesi': case 'session': {
-        reply('please wait..')
-        await sleep(3000)
-
-        // Read Database
-        var sesi_bot = fs.readFileSync(`./sessions/creds.json`)
-
-        // Sending Document
-        conn.sendMessage(from, { document: sesi_bot, mimetype: 'document/application', fileName: 'session.json' }, { quoted: msg })
+        reply('Pengiriman session dinonaktifkan demi keamanan. Backup folder sessions langsung dari perangkat dan jangan pernah membagikannya.')
       }
         break
 
       case 'clear':
       case 'clearer':
       case 'clearerr': {
-        server_eror.splice('[]')
+        server_eror.length = 0
         fs.writeFileSync('./database/func_error.json', JSON.stringify(server_eror))
         reply('Done')
       }
@@ -602,45 +582,74 @@ _Wait Mengirim file..._
 
       case 'fitnah':
       case 'reply':
-        if (!isGroup) return
-        if (!q) return reply(`example *${prefix + command}* @tag|targetmessage|botmessage`)
-        var org = q.split("|")[0]
-        var target = q.split("|")[1]
-        var bot = q.split("|")[2]
-        if (!org.startsWith('@')) return reply('Tag someone')
-        if (!target) return reply(`add target message`)
-        if (!bot) return reply(`add bot message`)
-        var mens = parseMention(target)
-        var msg1 = { key: { fromMe: false, participant: `${parseMention(org)}`, remoteJid: from ? from : '' }, message: { extemdedTextMessage: { text: `${target}`, contextInfo: { mentionedJid: mens } } } }
-        var msg2 = { key: { fromMe: false, participant: `${parseMention(org)}`, remoteJid: from ? from : '' }, message: { conversation: `${target}` } }
-        conn.sendMessage(from, { text: bot, mentions: mentioned }, { quoted: mens.length > 2 ? msg1 : msg2 })
+        if (!isGroup) return reply('Perintah ini hanya dapat digunakan di dalam grup!')
+        if (!q || !q.includes('|')) return reply(`Contoh penggunaan:\n*${prefix + command}* @tag|pesan target|pesan bot`)
+        const argsFitnah = q.split('|')
+        const org = argsFitnah[0] ? argsFitnah[0].trim() : ''
+        const target = argsFitnah[1] ? argsFitnah[1].trim() : ''
+        const bot = argsFitnah[2] ? argsFitnah[2].trim() : ''
+        if (!org) return reply('Tag atau masukkan nomor target!')
+        if (!target) return reply('Masukkan pesan target!')
+        if (!bot) return reply('Masukkan pesan bot!')
+
+        let targetJid
+        const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+        if (mentionedJids.length > 0) {
+          targetJid = mentionedJids[0]
+        } else {
+          const parsedTarget = parseMention(org)
+          if (parsedTarget.length > 0) {
+            targetJid = parsedTarget[0]
+          } else {
+            const num = org.replace(/[^0-9]/g, '')
+            if (num) targetJid = `${num}@s.whatsapp.net`
+          }
+        }
+
+        if (!targetJid) return reply('Nomor/Tag target tidak valid!')
+        targetJid = conn.decodeJid(targetJid)
+
+        const targetMentions = parseMention(target)
+        const fakeQuoted = {
+          key: {
+            fromMe: false,
+            participant: targetJid,
+            ...(from ? { remoteJid: from } : {})
+          },
+          message: targetMentions.length > 0 ? {
+            extendedTextMessage: {
+              text: target,
+              contextInfo: { mentionedJid: targetMentions }
+            }
+          } : {
+            conversation: target
+          }
+        }
+
+        const allMentions = Array.from(new Set([
+          ...parseMention(bot),
+          ...parseMention(q),
+          ...(mentionedJids || []),
+          targetJid
+        ]))
+
+        await conn.sendMessage(from, { text: bot, mentions: allMentions }, { quoted: fakeQuoted })
         break
+
 
       case 'setppgrup':
       case 'setppgc':
       case 'spgc':
         if (!isGroup) return
-        if (isImage && isQuotedImage) return reply(`Kirim gambar dengan caption *#bukti* atau reply gambar yang sudah dikirim dengan caption *#bukti*`)
+        if (!isImage && !isQuotedImage) return reply(`Kirim atau balas gambar dengan caption ${prefix + command}`)
         await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split('@')[0]}.jpg`)
         var media = `./sticker/${sender.split('@')[0]}.jpg`
-        var { img } = await conn.generateProfilePicture(media)
-        await conn.query({
-          tag: 'iq',
-          attrs: {
-            to: from,
-            type: 'set',
-            xmlns: 'w:profile:picture'
-          },
-          content: [
-            {
-              tag: 'picture',
-              attrs: { type: 'image' },
-              content: img
-            }
-          ]
-        })
-        await sleep(2000)
-        fs.unlinkSync(media)
+        try {
+          await updateFullProfilePicture(conn, from, media)
+          reply('Foto profil grup berhasil diperbarui')
+        } finally {
+          if (fs.existsSync(media)) fs.unlinkSync(media)
+        }
         break
 
       case 'tagall':
@@ -716,7 +725,7 @@ _Wait Mengirim file..._
           var rand1 = 'sticker/' + getRandom('.webp')
           var rand2 = 'sticker/' + getRandom('.png')
           fs.writeFileSync(`./${rand1}`, buffer)
-          exec(`ffmpeg -i ./${rand1} ./${rand2}`, (err) => {
+          execFile(ffmpegPath, ['-y', '-i', `./${rand1}`, `./${rand2}`], (err) => {
             fs.unlinkSync(`./${rand1}`)
             if (err) return reply('*ERROR*')
             conn.sendMessage(from, { image: fs.readFileSync(`./${rand2}`), jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg'), fileLength: 99999999999999 }, { quoted: msg })
@@ -732,7 +741,7 @@ _Wait Mengirim file..._
           await conn.downloadAndSaveMediaMessage(msg, "sticker", `./sticker/${sender.split("@")[0]}.webp`)
           let buffer = `./sticker/${sender.split("@")[0]}.webp`
           let webpToMp4 = await webp2mp4File(buffer)
-          conn.sendMessage(from, { video: { url: webpToMp4.result }, caption: 'Convert Webp To Video', jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg') }, { quoted: msg })
+          conn.sendMessage(from, { video: webpToMp4.result, caption: 'Convert Webp To Video', jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg') }, { quoted: msg })
           fs.unlinkSync(buffer)
         } else {
           reply(`Tag/reply picture with caption ${prefix + command}`)
@@ -741,18 +750,20 @@ _Wait Mengirim file..._
       case 'tomp3': case 'toaudio':
         if (isVideo || isQuotedVideo) {
           await conn.downloadAndSaveMediaMessage(msg, 'video', `./sticker/${sender.split("@")[0]}.mp4`)
-          let buffer_up = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
-          var rand2 = 'sticker/' + getRandom('.mp4')
-          fs.writeFileSync(`./${rand2}`, buffer_up)
-          exec(`ffmpeg -i ${media} ${rand2}`, (err) => {
-            var buffer453 = fs.readFileSync(rand2);
+          const inputFile = `./sticker/${sender.split("@")[0]}.mp4`
+          const outputFile = 'sticker/' + getRandom('.mp3')
+          execFile(ffmpegPath, ['-y', '-i', inputFile, '-vn', '-codec:a', 'libmp3lame', outputFile], (err) => {
+            if (err) {
+              if (fs.existsSync(inputFile)) fs.unlinkSync(inputFile)
+              return reply('*ERROR*: pastikan FFmpeg sudah terpasang dan tersedia di PATH')
+            }
+            var buffer453 = fs.readFileSync(outputFile);
             conn.sendMessage(from, {
               audio: buffer453,
-              mimetype: "audio/mp4",
-              quoted: msg,
-            });
-            fs.unlinkSync(rand2);
-            fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
+              mimetype: "audio/mpeg"
+            }, { quoted: msg });
+            fs.unlinkSync(outputFile);
+            fs.unlinkSync(inputFile)
           })
         }
         break
@@ -770,16 +781,7 @@ _Wait Mengirim file..._
           var media = await conn.downloadAndSaveMediaMessage(msg, 'image', `./sticker/${sender.split('@')[0]}.jpg`)
           var media_url = await TelegraPh(media)
           var meme_url = `https://api.memegen.link/images/custom/${encodeURIComponent(atas)}/${encodeURIComponent(bawah)}.png?background=${media_url}`
-          let stcmeme = new Sticker(meme_url, {
-            pack: '', // The pack name
-            author: setting.wm, // The author name
-            type: StickerTypes.FULL, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 50, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          var buffer = await stcmeme.toBuffer()
+          var buffer = await createSticker(meme_url, { author: setting.wm, quality: 50 })
           conn.sendMessage(from, { sticker: buffer, fileLength: 1000000000000 }, { quoted: msg })
           fs.unlinkSync(media)
         }
@@ -796,16 +798,7 @@ _Wait Mengirim file..._
         if (isSticker || isQuotedSticker) {
           await conn.downloadAndSaveMediaMessage(msg, "sticker", `./sticker/${sender.split("@")[0]}.webp`)
           var media = fs.readFileSync(`./sticker/${sender.split("@")[0]}.webp`)
-          let stc = new Sticker(media, {
-            pack: `${pname}`, // The pack name
-            author: `${athor}`, // The author name
-            type: StickerTypes.FULL, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 50, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          var buffer = await stc.toBuffer()
+          var buffer = await createSticker(media, { pack: pname, author: athor, quality: 50 })
           conn.sendMessage(from, { sticker: buffer, fileLength: 1000000000000 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.webp`)
         } else {
@@ -816,31 +809,13 @@ _Wait Mengirim file..._
         if (isImage || isQuotedImage) {
           await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split("@")[0]}.jpeg`)
           let stci = fs.readFileSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-          let stc = new Sticker(stci, {
-            pack: '', // The pack name
-            author: setting.wm, // The author name
-            type: StickerTypes.FULL, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 75, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          var buffer = await stc.toBuffer()
+          var buffer = await createSticker(stci, { author: setting.wm, quality: 75 })
           conn.sendMessage(from, { sticker: buffer, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-        } else if (isVideo && msg.message.videoMessage.seconds < 10 || isQuotedVideo && quotedMsg.videoMessage.seconds < 10) {
+        } else if ((isVideo && msg.message.videoMessage.seconds < 10) || (isQuotedVideo && quotedMsg?.videoMessage?.seconds < 10)) {
           await conn.downloadAndSaveMediaMessage(msg, "video", `./sticker/${sender.split("@")[0]}.mp4`)
           let stcg = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
-          let sticker = new Sticker(stcg, {
-            pack: '', // The pack name
-            author: setting.wm, // The author name
-            type: StickerTypes.FULL, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 20, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          const stikk = await sticker.toBuffer()
+          const stikk = await createSticker(stcg, { author: setting.wm, quality: 20, video: true })
           conn.sendMessage(from, { sticker: stikk, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
         }
@@ -849,31 +824,13 @@ _Wait Mengirim file..._
         if (isImage || isQuotedImage) {
           await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split("@")[0]}.jpeg`)
           let stci = fs.readFileSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-          let stc = new Sticker(stci, {
-            pack: '', // The pack name
-            author: setting.wm, // The author name
-            type: StickerTypes.CROPPED, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 75, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          var buffer = await stc.toBuffer()
+          var buffer = await createSticker(stci, { author: setting.wm, quality: 75, cropped: true })
           conn.sendMessage(from, { sticker: buffer, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-        } else if (isVideo && msg.message.videoMessage.seconds < 10 || isQuotedVideo && quotedMsg.videoMessage.seconds < 10) {
+        } else if ((isVideo && msg.message.videoMessage.seconds < 10) || (isQuotedVideo && quotedMsg?.videoMessage?.seconds < 10)) {
           await conn.downloadAndSaveMediaMessage(msg, "video", `./sticker/${sender.split("@")[0]}.mp4`)
           let stcg = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
-          let sticker = new Sticker(stcg, {
-            pack: '', // The pack name
-            author: setting.wm, // The author name
-            type: StickerTypes.CROPPED, // The sticker type
-            categories: ['🤩', '🎉'], // The sticker category
-            id: '12345', // The sticker id
-            quality: 20, // The quality of the output file
-            background: 'transparent' // The sticker background color (only for full stickers)
-          })
-          const stikk = await sticker.toBuffer()
+          const stikk = await createSticker(stcg, { author: setting.wm, quality: 20, cropped: true, video: true })
           conn.sendMessage(from, { sticker: stikk, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
         }

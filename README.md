@@ -1,93 +1,73 @@
-<p align="center">
-<img src="https://telegra.ph/file/730692d159292986aaa3f.jpg" width="40%" style="margin-left: auto;margin-right: auto;display: block;">
-</p>
-<h1 align="center">Simple Selfbot</h1>
-<p align="center">
- <a href="#"><img title="Sedative SelfBot" src="https://img.shields.io/badge/Sedative Community-green?colorA=%23ff0000&colorB=%23017e40&style=for-the-badge"></a>
-</p>
-<p align="center">
-<a href="https://github.com/dragneel1111"><img title="Author" src="https://img.shields.io/badge/AUTHOR-Rafly_A.-blue.svg?style=for-the-badge&logo=github"></a>
-</p>
-<p align="center">
+# Simple SelfBot
 
-## Installation For Windows
-* Download And Install [`Git`](https://git-scm.com/downloads)
-* Download And Install [`NodeJs`](https://nodejs.org/en/download)
-* Download and Path [`FFMPEG`](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip)
+Bot WhatsApp pribadi berbasis [Baileys](https://github.com/WhiskeySockets/Baileys). Proyek ini memakai pairing code secara default dan hanya memproses perintah yang dikirim oleh akun sendiri (`fromMe`).
 
-Clone the project
-```
-cd Simple-Selfbot
-```
-Install the project
-```
+> Baileys memakai protokol WhatsApp Web dan bukan API resmi WhatsApp Business. Penggunaan otomasi dapat menyebabkan pembatasan atau pemblokiran akun. Gunakan secara wajar dan tanggung risikonya sendiri.
+
+## Persyaratan
+
+- Node.js 20.9 atau lebih baru (Node.js 22 LTS direkomendasikan)
+- npm
+
+FFmpeg sudah disertakan melalui dependensi npm, jadi tidak perlu dipasang secara terpisah.
+
+## Instalasi
+
+```bash
 npm install
-```
-Then run
-```
 npm start
 ```
-Open your WhatsApp linked devices and use "Link with phone number instead", make sure u r using the new version of whatsapp, and then input ur whatsapp number
-<p>
-<img src="https://telegra.ph/file/94be068070c76bd790c53.jpg">
-<b>Now enjoy your selfbot without scanning the qrcode</b>
-</p>
 
-## Main Command
+Saat pertama dijalankan, masukkan nomor WhatsApp dengan kode negara tanpa tanda `+`, spasi, atau tanda hubung. Contoh:
+
+```text
+628123456789
 ```
+
+Masukkan pairing code yang ditampilkan ke menu **WhatsApp > Perangkat tertaut > Tautkan dengan nomor telepon**.
+
+Untuk server/non-interaktif, nomor dapat diberikan melalui environment variable:
+
+```powershell
+$env:WA_PHONE_NUMBER = "628123456789"
+npm start
+```
+
+Untuk login dengan QR code:
+
+```bash
+npm run start:qr
+```
+
+Data autentikasi disimpan di folder `sessions/`. Jangan mengunggah, membagikan, atau memasukkan folder tersebut ke source control. Jika WhatsApp menampilkan status logout, hentikan bot, hapus folder `sessions/`, lalu lakukan pairing ulang.
+
+## Konfigurasi
+
+Ubah `config.json` untuk mengatur nama bot, nama pemilik, watermark, nomor pemilik, dan prefix. Prefix juga dapat diubah melalui perintah `!setprefix`.
+
+Perintah utama:
+
+```text
 !menu
 !menu owner
 ```
-the prefix is "!" ,
-you can change the prefix use command in menu owner or change it in file [`config.json`](https://github.com/dragneel1111/Simple-Selfbot/blob/main/config.json)
 
-## Simple Features
+Perintah `!setppbot` dan `!setppgc` mempertahankan rasio gambar asli. Gambar portrait atau landscape tidak dipotong otomatis menjadi rasio 1:1 sebelum dikirim ke WhatsApp.
 
-| Status |                     Downloader                |
-| :------------: | :---------------------------------------------: |
-|       ✅        |   YouTube mp3/mp4 Downloader  |
-|       ✅        |   Facebook Downloader  |
-|       ✅        |   Instagram Video/Image Downloader  |
-|       ✅        |   Tiktok Video/Slide Downloader  |
-|       ✅        |   Mega Downloader |
-|       ✅        |   Mediafire Downloader |
+## Pemeriksaan
 
-| Status |                Converter           |
-| :-----------: | :--------------------------------: |
-|       ✅       | Image/Video to Sticker |
-|       ✅       | Sticker to Image/Gif |
-|       ✅       | Image/Video to Url |
-|       ✅       | Video to Audio |
+```bash
+npm run check
+npm audit
+```
 
-| Status |                     Tools                |
-| :------------: | :---------------------------------------------: |
-|       ✅        |  Set Full Profile/Group Pict  |
-|       ✅        |  Fake Reply |
-|       ✅        |  Hidetag  |
-|       ✅        |  Eval Code  |
+Downloader YouTube, Facebook, Instagram, TikTok, MediaFire, dan Mega bergantung pada situs atau layanan pihak ketiga. Perubahan dari layanan tersebut dapat membuat fitur downloader tertentu berhenti meskipun koneksi bot tetap berjalan.
 
-| And |  Others...  |
-| :------------: | :---------------------------------------------: |
+## Pemecahan masalah
 
-## About
-Simple Selfbot with common feature, nothing special here.
-Just Install and run without change anything the selfbot can run normally.
-You can add the new command or function in [`conn.js`](https://github.com/dragneel1111/Simple-Selfbot/blob/main/conn.js)
+- **Pairing code tidak muncul:** pastikan nomor memakai kode negara dan Node.js memenuhi versi minimum.
+- **Session logout:** hapus `sessions/`, jalankan ulang, lalu pairing kembali.
+- **Media gagal dikonversi:** jalankan `npm install` lagi agar binary FFmpeg platform saat ini terpasang.
+- **Log Baileys dibutuhkan:** jalankan dengan `LOG_LEVEL=info` (PowerShell: `$env:LOG_LEVEL = "info"`).
 
-<b>Don't spam ur selfbot feature</b>, because your number can be blocked by WhatsApp
-
-<b>Nb:</b>
-Masih belajar puh😁🙏
-
-## Contact Me
-* [`WhatsApp`](https://wa.me/6281234795656?text=Hai%20orang%20ganteng:v)
- 
-## Join To Whatsapp Group
-* [`WhatsApp Group`](https://chat.whatsapp.com/H3oKeocqelb0EfNCJZE02m)
-  
-## ```Thanks to ✨```
-* [`WhisKeyShockets`](https://github.com/WhiskeySockets/Baileys)
-* [`Rafly A.`](https://github.com/dragneel1111)
-* [`ImYanXiao`](https://github.com/ImYanXiao)
-* [`MRoy25`](https://github.com/mroy-25)
-
+Lisensi: Apache-2.0.

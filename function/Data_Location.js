@@ -1,7 +1,9 @@
 
+"use strict";
+
 const fs = require('fs')
 
-JSON_DATA = {
+const JSON_DATA = {
 setting: JSON.parse(fs.readFileSync('./config.json')),
 server_eror: JSON.parse(fs.readFileSync('./database/func_error.json')),
 db_respon_list: JSON.parse(fs.readFileSync('./database/db_addlist.json')),

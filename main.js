@@ -1,240 +1,220 @@
 "use strict";
-const { default: makeWASocket, MessageType, DisconnectReason, useMultiFileAuthState, makeInMemoryStore, downloadContentFromMessage, jidDecode, generateForwardMessageContent, generateWAMessageFromContent, makeCacheableSignalKeyStore } = require("@adiwajshing/baileys")
-const fs = require("fs");
-const figlet = require("figlet");
-const lolcatjs = require('lolcatjs');
-const chalk = require('chalk')
-const logg = require('pino')
-const Jimp = require('jimp')
-const parsePhoneNumber = require('libphonenumber-js')
-const readline = require('readline');
-const { nocache, uncache } = require('./function/Chache_Data.js');
-const { serialize, fetchJson, getBuffer } = require("./function/func_Server");
-const { status_Connection } = require('./function/Data_Server_Bot/Status_Connect.js')
-const { Memory_Store } = require('./function/Data_Server_Bot/Memory_Store.js')
-const { color } = require('./function/Data_Server_Bot/Console_Data')
 
-let setting = JSON.parse(fs.readFileSync('./config.json'));
-const botLogger = logg({ level: 'silent' })
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+const figlet = require('figlet');
+const lolcatjs = require('lolcatjs');
+const chalk = require('chalk');
+const pino = require('pino');
+const qrcode = require('qrcode-terminal');
+
+const { serialize, getBuffer } = require('./function/func_Server');
+const { status_Connection } = require('./function/Data_Server_Bot/Status_Connect');
+const { Memory_Store } = require('./function/Data_Server_Bot/Memory_Store');
+const { color } = require('./function/Data_Server_Bot/Console_Data');
+
+process.chdir(__dirname);
+
+const setting = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
+const botLogger = pino({ level: process.env.LOG_LEVEL || 'silent' });
+const sessionPath = path.join(__dirname, 'sessions');
+const usePairingCode = !process.argv.includes('--qr');
+const useStore = !process.argv.includes('--no-store');
+const messageHandler = require('./conn');
+
+const startTime = Math.floor(Date.now() / 1000);
+
+let baileys;
+let currentSocket;
 
 function title() {
-	console.clear()
-	console.log('----------------------------------------------------')
-	lolcatjs.fromString(chalk.cyan(figlet.textSync('Rafly', {
-		font: 'Bloody',
-		horizontalLayout: 'full',
-		verticalLayout: 'full',
-		whitespaceBreak: true
-	})));
-	console.log('----------------------------------------------------')
-	lolcatjs.fromString('[SERVER STARTED!!!]')
-	console.log('----------------------------------------------------')
-	lolcatjs.fromString('Create by Rafly¹¹')
-	console.log('----------------------------------------------------')
+  if (process.stdout.isTTY) console.clear();
+  console.log('----------------------------------------------------');
+  lolcatjs.fromString(chalk.cyan(figlet.textSync('Rafly', {
+    font: 'Bloody',
+    horizontalLayout: 'full',
+    verticalLayout: 'full',
+    whitespaceBreak: true
+  })));
+  console.log('----------------------------------------------------');
+  lolcatjs.fromString('[SERVER STARTED]');
+  console.log('----------------------------------------------------');
+  lolcatjs.fromString('Created by Rafly');
+  console.log('----------------------------------------------------');
 }
 
-async function sedative() {
-	const { state, saveCreds } = await useMultiFileAuthState('./sessions')
-
-	const useStore = !process.argv.includes('--no-store')
-	const doReplies = !process.argv.includes('--no-reply')
-	const usePairingCode = !process.argv.includes('--use-pairing-code')
-	const useMobile = process.argv.includes('--mobile')
-
-	async function connectToWhatsApp() {
-
-		const conn = makeWASocket({
-			printQRInTerminal: !usePairingCode,
-			markOnlineOnConnect: false,
-			logger: botLogger,
-			browser: ['Mac OS', 'safari', '5.1.10'],
-			auth: state,
-			mobile: useMobile,
-			generateHighQualityLinkPreview: true,
-			patchMessageBeforeSending: (message) => {
-				return message;
-			}
-		})
-		title()
-		Memory_Store.bind(conn.ev)
-
-		var question = function (text) {
-			return new Promise(function (resolve) {
-				rl.question(text, resolve);
-			});
-		};
-
-		const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-
-		if (usePairingCode && !conn.authState.creds.registered) {
-			const phoneNumber = await question('Please enter your mobile phone number:\n')
-			const code = await conn.requestPairingCode(phoneNumber)
-			console.log(`Pairing code: ${code}`)
-
-		}
-		// New Login Update via Mobile Number
-		if (useMobile && !conn.authState.creds.registered) {
-			// const question = (text) => new Promise<string>((resolve) => rl.question(text, resolve))
-			var question = function (text) {
-				return new Promise(function (resolve) {
-					rl.question(text, resolve);
-				});
-			};
-			const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-			const { registration } = conn.authState.creds || { registration: {} }
-
-			if (!registration.phoneNumber) {
-				registration.phoneNumber = await question('Please enter your mobile phone number:  ')
-			}
-
-			const phoneNumber = parsePhoneNumber(registration?.phoneNumber)
-			if (!phoneNumber?.isValid()) {
-				console.log('Invalid phone number: ' + registration?.phoneNumber)
-				process.exit(1)
-			}
-
-			registration.phoneNumber = phoneNumber.format('E.164')
-			registration.phoneNumberCountryCode = phoneNumber.countryCallingCode
-			registration.phoneNumberNationalNumber = phoneNumber.nationalNumber
-			const mcc = phoneNumber[phoneNumber.countryCallingCode]
-			if (!mcc) {
-				throw new Error('Could not find MCC for phone number: ' + registration?.phoneNumber + '\nPlease specify the MCC manually.')
-			}
-
-			registration.phoneNumberMobileCountryCode = mcc
-
-			async function enterCode() {
-				try {
-					const code = await question('Please enter the one time code: ')
-					const response = await conn.register(code.replace(/["']/g, '').trim().toLowerCase())
-					console.log('Successfully registered your phone number.')
-					console.log(response)
-					rl.close()
-				} catch (error) {
-					console.error('Failed to register your phone number. Please try again.\n', error)
-					await askForOTP()
-				}
-			}
-
-			async function askForOTP() {
-				let code = await question('How would you like to receive the one time code for registration? "sms" or "voice" ')
-				code = code.replace(/["']/g, '').trim().toLowerCase()
-
-				if (code !== 'sms' && code !== 'voice') {
-					return await askForOTP()
-				}
-
-				registration.method = code
-
-				try {
-					await conn.requestRegistrationCode(registration)
-					await enterCode()
-				} catch (error) {
-					console.error('Failed to request registration code. Please try again.\n', error)
-					await askForOTP()
-				}
-			}
-
-			askForOTP()
-		}
-
-
-		conn.ev.on('messages.upsert', async m => {
-			var msg = m.messages[0]
-			if (!m.messages) return;
-			if (msg.key && msg.key.remoteJid == "status@broadcast") return
-			msg = serialize(conn, msg)
-			msg.isBaileys = msg.key.id.startsWith('BAE5') || msg.key.id.startsWith('3EB0')
-			require('./conn')(conn, msg, m, setting, Memory_Store)
-		})
-
-		conn.ev.on('creds.update', saveCreds)
-
-		conn.reply = (from, content, msg) => conn.sendMessage(from, { text: content }, { quoted: msg })
-
-
-		conn.ev.on('connection.update', async (update, anu) => {
-			status_Connection(conn, update, connectToWhatsApp)
-		})
-
-		conn.ev.on('group-participants.update', (update) => {
-			if (update.action == 'remove') {
-				var txt = "\n" + color('───────────────> PARTICIPANTS REMOVE', 'red') + "\n"
-				txt += color(`• Id		: ` + update.id, 'red') + "\n"
-				txt += color(`• Participants	: ` + update.participants, 'red') + "\n"
-				txt += color('─────────────────────────────────────>', 'red') + "\n"
-				console.log(txt)
-			} else if (update.action == 'add') {
-				var txt = "\n" + color('──────────────────> PARTICIPANTS ADD', 'green') + "\n"
-				txt += color(`• Id		: ` + update.id) + "\n"
-				txt += color(`• Participants	: ` + update.participants) + "\n"
-				txt += color('─────────────────────────────────────>', 'green') + "\n"
-				console.log(txt)
-			}
-		})
-
-		conn.sendImage = async (jid, path, caption = '', quoted = '', options) => {
-			let buffer = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
-			return await conn.sendMessage(jid, { image: buffer, caption: caption, ...options }, { quoted })
-		}
-
-		conn.decodeJid = (jid) => {
-			if (!jid) return jid
-			if (/:\d+@/gi.test(jid)) {
-				let decode = jidDecode(jid) || {}
-				return decode.user && decode.server && decode.user + '@' + decode.server || jid
-			} else return jid
-		}
-
-		conn.generateProfilePicture = async (buffer) => {
-
-			const jimp = await Jimp.read(buffer)
-			const min = jimp.getWidth()
-			const max = jimp.getHeight()
-			const cropped = jimp.crop(0, 0, min, max)
-			return {
-				img: await cropped.scaleToFit(720, 720).getBufferAsync(Jimp.MIME_JPEG),
-				preview: await cropped.scaleToFit(720, 720).getBufferAsync(Jimp.MIME_JPEG)
-			}
-		}
-		conn.downloadAndSaveMediaMessage = async (msg, type_file, path_file) => {
-			if (type_file === 'image') {
-				var stream = await downloadContentFromMessage(msg.message.imageMessage || msg.message.extendedTextMessage?.contextInfo.quotedMessage.imageMessage, 'image')
-				let buffer = Buffer.from([])
-				for await (const chunk of stream) {
-					buffer = Buffer.concat([buffer, chunk])
-				}
-				fs.writeFileSync(path_file, buffer)
-				return path_file
-			} else if (type_file === 'video') {
-				var stream = await downloadContentFromMessage(msg.message.videoMessage || msg.message.extendedTextMessage?.contextInfo.quotedMessage.videoMessage, 'video')
-				let buffer = Buffer.from([])
-				for await (const chunk of stream) {
-					buffer = Buffer.concat([buffer, chunk])
-				}
-				fs.writeFileSync(path_file, buffer)
-				return path_file
-			} else if (type_file === 'sticker') {
-				var stream = await downloadContentFromMessage(msg.message.stickerMessage || msg.message.extendedTextMessage?.contextInfo.quotedMessage.stickerMessage, 'sticker')
-				let buffer = Buffer.from([])
-				for await (const chunk of stream) {
-					buffer = Buffer.concat([buffer, chunk])
-				}
-				fs.writeFileSync(path_file, buffer)
-				return path_file
-			} else if (type_file === 'audio') {
-				var stream = await downloadContentFromMessage(msg.message.audioMessage || msg.message.extendedTextMessage?.contextInfo.quotedMessage.audioMessage, 'audio')
-				let buffer = Buffer.from([])
-				for await (const chunk of stream) {
-					buffer = Buffer.concat([buffer, chunk])
-				}
-				fs.writeFileSync(path_file, buffer)
-				return path_file
-			}
-		}
-
-		return conn
-	}
-	connectToWhatsApp()
+function normalizePhoneNumber(value) {
+  const phoneNumber = String(value || '').replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(phoneNumber)) {
+    throw new Error('Phone number must use country code and contain 8-15 digits, for example 628123456789.');
+  }
+  return phoneNumber;
 }
-sedative()
+
+function ask(question) {
+  if (!process.stdin.isTTY) {
+    throw new Error('Set WA_PHONE_NUMBER when running without an interactive terminal.');
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+async function getPhoneNumber() {
+  if (process.env.WA_PHONE_NUMBER) return normalizePhoneNumber(process.env.WA_PHONE_NUMBER);
+  return normalizePhoneNumber(await ask('Enter your WhatsApp number with country code (example 628123456789):\n'));
+}
+
+async function connectToWhatsApp() {
+  const {
+    default: makeWASocket,
+    Browsers,
+    DisconnectReason,
+    downloadContentFromMessage,
+    jidDecode,
+    makeCacheableSignalKeyStore,
+    useMultiFileAuthState
+  } = baileys;
+
+  const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+  let pairingCodeRequested = false;
+
+  const conn = makeWASocket({
+    logger: botLogger,
+    browser: Browsers.macOS('Google Chrome'),
+    markOnlineOnConnect: false,
+    generateHighQualityLinkPreview: true,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, botLogger)
+    },
+    getMessage: async key => Memory_Store.get(key)?.message
+  });
+
+  currentSocket = conn;
+  title();
+  if (useStore) Memory_Store.bind(conn.ev);
+
+  conn.ev.on('creds.update', saveCreds);
+
+  conn.ev.on('connection.update', async update => {
+    if (!state.creds.registered) {
+      if (usePairingCode && !pairingCodeRequested && update.qr) {
+        pairingCodeRequested = true;
+        try {
+          const phoneNumber = await getPhoneNumber();
+          const code = await conn.requestPairingCode(phoneNumber);
+          console.log(`Pairing code: ${code.match(/.{1,4}/g)?.join('-') || code}`);
+        } catch (error) {
+          pairingCodeRequested = false;
+          console.error('Could not request a pairing code:', error.message);
+        }
+      } else if (!usePairingCode && update.qr) {
+        qrcode.generate(update.qr, { small: true });
+      }
+    }
+
+    await status_Connection(conn, update, connectToWhatsApp, DisconnectReason);
+  });
+
+  conn.ev.on('messages.upsert', async event => {
+    for (const rawMessage of event.messages || []) {
+      if (!rawMessage?.message || rawMessage.key?.remoteJid === 'status@broadcast') continue;
+
+      const msgTimestamp = typeof rawMessage.messageTimestamp === 'number'
+        ? rawMessage.messageTimestamp
+        : (rawMessage.messageTimestamp?.low || rawMessage.messageTimestamp?.toNumber?.() || 0);
+
+      // Abaikan pesan yang masuk sebelum server dihidupkan
+      if (msgTimestamp > 0 && msgTimestamp < startTime - 5) {
+        continue;
+      }
+
+      const msg = serialize(conn, rawMessage);
+
+      try {
+        await messageHandler(conn, msg, event, setting, Memory_Store);
+      } catch (error) {
+        console.error('Message handler failed:', error);
+      }
+    }
+  });
+
+  conn.ev.on('group-participants.update', update => {
+    const action = update.action === 'remove' ? 'REMOVE' : update.action === 'add' ? 'ADD' : update.action.toUpperCase();
+    const actionColor = update.action === 'remove' ? 'red' : 'green';
+    let text = `\n${color(`-----------------> PARTICIPANTS ${action}`, actionColor)}\n`;
+    text += color(`- Id           : ${update.id}`, actionColor) + '\n';
+    text += color(`- Participants : ${update.participants.join(', ')}`, actionColor) + '\n';
+    text += color('-------------------------------------->', actionColor) + '\n';
+    console.log(text);
+  });
+
+  conn.reply = (jid, content, quoted) => conn.sendMessage(jid, { text: content }, { quoted });
+
+  conn.sendImage = async (jid, source, caption = '', quoted, options = {}) => {
+    const buffer = Buffer.isBuffer(source)
+      ? source
+      : /^data:.*?\/.*?;base64,/i.test(source)
+        ? Buffer.from(source.split(',')[1], 'base64')
+        : /^https?:\/\//.test(source)
+          ? await getBuffer(source)
+          : fs.existsSync(source)
+            ? fs.readFileSync(source)
+            : Buffer.alloc(0);
+
+    return conn.sendMessage(jid, { image: buffer, caption, ...options }, { quoted });
+  };
+
+  conn.decodeJid = jid => {
+    if (!jid || !/:\d+@/i.test(jid)) return jid;
+    const decoded = jidDecode(jid) || {};
+    return decoded.user && decoded.server ? `${decoded.user}@${decoded.server}` : jid;
+  };
+
+  conn.downloadAndSaveMediaMessage = async (msg, mediaType, destination) => {
+    const property = `${mediaType}Message`;
+    const directMessage = msg.message?.[property];
+    const quotedMessage = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    const mediaMessage = directMessage
+      || quotedMessage?.[property]
+      || quotedMessage?.ephemeralMessage?.message?.[property];
+
+    if (!mediaMessage) throw new Error(`No ${mediaType} media found in the message.`);
+
+    const stream = await downloadContentFromMessage(mediaMessage, mediaType);
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    fs.writeFileSync(destination, Buffer.concat(chunks));
+    return destination;
+  };
+
+  return conn;
+}
+
+async function start() {
+  // Baileys v7 is ESM-only. Dynamic import lets the existing CommonJS command
+  // modules remain compatible while using the maintained Baileys package.
+  baileys = await import('baileys');
+  await connectToWhatsApp();
+}
+
+process.once('SIGINT', () => {
+  currentSocket?.end(new Error('Process interrupted'));
+  process.exit(0);
+});
+
+process.on('unhandledRejection', error => {
+  console.error('Unhandled rejection:', error);
+});
+
+start().catch(error => {
+  console.error('Unable to start the bot:', error);
+  process.exitCode = 1;
+});
