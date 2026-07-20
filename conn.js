@@ -69,56 +69,107 @@ module.exports = async (conn, msg, m, setting, store) => {
       ? (`${setting.ownerNumber}@s.whatsapp.net`)
       : (msg.sender || (isGroup ? (msg.key.participant || msg.participant) : msg.key.remoteJid))
 
-    function formatPhoneNumber(jid, isFromMe, groupList = []) {
-      if (isFromMe) {
+    function resolveUserSender(msgObj, isGroupChat, groupList = []) {
+      let phoneNum = '';
+      let lidId = '';
+
+      if (msgObj.key.fromMe) {
         const ownerNum = setting.ownerNumber ? setting.ownerNumber.replace(/[^0-9]/g, '') : '';
-        if (ownerNum) return `+${ownerNum}`;
+        if (ownerNum) phoneNum = `+${ownerNum}`;
+
+        let userJid = conn.user?.jid || conn.user?.id || '';
+        if (userJid) {
+          userJid = conn.decodeJid(userJid) || userJid;
+          const uNum = userJid.split('@')[0].replace(/[^0-9]/g, '');
+          if (uNum && uNum.length >= 7 && uNum.length <= 15) {
+            if (!phoneNum) phoneNum = `+${uNum}`;
+          }
+        }
       }
 
-      if (!jid) return '';
-      const cleanJid = jid.split(':')[0].trim();
-      const numOnly = cleanJid.split('@')[0].replace(/[^0-9]/g, '');
+      const rawCandidates = [
+        msgObj.sender,
+        msgObj.key?.participant,
+        msgObj.participant,
+        msgObj.key?.remoteJid,
+        initialSender
+      ].filter(Boolean);
+
+      const decodedCandidates = rawCandidates.map(j => conn.decodeJid(j) || String(j).replace(/:\d+@/, '@'));
+
+      for (const jid of decodedCandidates) {
+        if (jid.endsWith('@s.whatsapp.net')) {
+          const num = jid.split('@')[0].replace(/[^0-9]/g, '');
+          if (num.length >= 7 && num.length <= 15) {
+            if (!phoneNum) phoneNum = `+${num}`;
+          }
+        } else if (jid.endsWith('@lid')) {
+          const id = jid.split('@')[0].replace(/[^0-9]/g, '');
+          if (!lidId) lidId = id;
+        }
+      }
 
       if (groupList && groupList.length > 0) {
-        const found = groupList.find(p => 
-          p.id === jid || p.lid === jid || 
-          p.id === cleanJid || p.lid === cleanJid ||
-          (p.id && p.id.split('@')[0] === numOnly) ||
-          (p.lid && p.lid.split('@')[0] === numOnly)
-        );
-        if (found) {
-          const pnJid = found.pn || (found.id && found.id.endsWith('@s.whatsapp.net') ? found.id : '');
-          if (pnJid) {
-            const pNum = pnJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            if (pNum && pNum.length <= 15) return `+${pNum}`;
+        for (const candidate of decodedCandidates) {
+          const candNum = candidate.split('@')[0].replace(/[^0-9]/g, '');
+          const found = groupList.find(p => {
+            const pId = p.id ? (conn.decodeJid(p.id) || p.id) : '';
+            const pLid = p.lid ? (conn.decodeJid(p.lid) || p.lid) : '';
+            return pId === candidate || pLid === candidate || 
+                   (pId && pId.split('@')[0] === candNum) ||
+                   (pLid && pLid.split('@')[0] === candNum);
+          });
+
+          if (found) {
+            if (found.lid) {
+              const decodedLid = conn.decodeJid(found.lid) || found.lid;
+              lidId = decodedLid.split('@')[0].replace(/[^0-9]/g, '');
+            }
+            const phoneJid = found.pn || (found.id && (conn.decodeJid(found.id) || found.id).endsWith('@s.whatsapp.net') ? found.id : '');
+            if (phoneJid) {
+              const dPhoneJid = conn.decodeJid(phoneJid) || phoneJid;
+              const pNum = dPhoneJid.split('@')[0].replace(/[^0-9]/g, '');
+              if (pNum && pNum.length >= 7 && pNum.length <= 15) {
+                phoneNum = `+${pNum}`;
+              }
+            }
           }
         }
       }
 
       if (conn.contacts) {
-        const contact = conn.contacts[jid] || conn.contacts[cleanJid];
-        if (contact) {
-          const cJid = contact.id || contact.jid || '';
-          if (cJid.endsWith('@s.whatsapp.net')) {
-            const cNum = cJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            if (cNum && cNum.length <= 15) return `+${cNum}`;
+        for (const candidate of decodedCandidates) {
+          const contact = conn.contacts[candidate];
+          if (contact) {
+            if (contact.lid && !lidId) {
+              lidId = (conn.decodeJid(contact.lid) || contact.lid).split('@')[0].replace(/[^0-9]/g, '');
+            }
+            const cJid = contact.id || contact.jid || '';
+            if (cJid) {
+              const dCJid = conn.decodeJid(cJid) || cJid;
+              if (dCJid.endsWith('@s.whatsapp.net')) {
+                const cNum = dCJid.split('@')[0].replace(/[^0-9]/g, '');
+                if (cNum && cNum.length >= 7 && cNum.length <= 15) {
+                  if (!phoneNum) phoneNum = `+${cNum}`;
+                }
+              }
+            }
           }
         }
       }
 
-      if (numOnly.length >= 7 && numOnly.length <= 15) {
-        return `+${numOnly}`;
-      }
-
-      return numOnly ? `+${numOnly}` : '';
+      return { phoneNum, lidId };
     }
 
     const realSenderJid = conn.decodeJid(initialSender)
-    const senderPhone = formatPhoneNumber(initialSender, msg.key.fromMe, groupMembers)
+    const { phoneNum: senderPhone, lidId: rawLidId } = resolveUserSender(msg, isGroup, groupMembers)
     const sender = realSenderJid
     const isOwner = [`${setting.ownerNumber}@s.whatsapp.net`].includes(sender) ? true : false
-    const pushname = msg.pushName
-    const senderDisplay = pushname ? `${pushname} (${senderPhone})` : senderPhone
+    const pushname = msg.pushName || ''
+
+    const senderName = pushname || (msg.key.fromMe ? (setting.ownerName || 'Owner') : 'User')
+    const senderPhoneNumber = senderPhone || 'N/A'
+    const senderIdNum = rawLidId || (initialSender ? initialSender.split('@')[0].split(':')[0] : 'N/A')
     const body = chats.startsWith(prefix) ? chats : ''
     const args = body.trim().split(/ +/).slice(1);
     const q = args.join(" ");
@@ -267,7 +318,8 @@ module.exports = async (conn, msg, m, setting, store) => {
       logTxt += chalk.red('│') + chalk.red.bold('              ⚡ COMMAND DETECTED                 ') + chalk.red('│') + '\n'
       logTxt += chalk.red('├──────────────────────────────────────────────────┤') + '\n'
       logTxt += chalk.red('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
-      logTxt += chalk.red('│') + chalk.white(` 👤 From   : ${senderDisplay}`) + '\n'
+      logTxt += chalk.red('│') + chalk.white(` 👤 From   : ${senderName}`) + '\n'
+      logTxt += chalk.red('│') + chalk.white(` 🆔 ID     : ${senderIdNum}`) + '\n'
       logTxt += chalk.red('│') + chalk.white(` 📍 In     : ${isGroup ? (groupName || 'Group Chat') : 'Personal Chat'}`) + '\n'
       logTxt += chalk.red('│') + chalk.red.bold(` 🎯 Cmd    : ${prefix}${command}`) + chalk.gray(` [${args.length} args]`) + '\n'
       if (q) logTxt += chalk.red('│') + chalk.yellow(` 💬 Input  : ${q}`) + '\n'
@@ -281,7 +333,8 @@ module.exports = async (conn, msg, m, setting, store) => {
       logTxt += chalk.blue('│') + chalk.blue.bold('             💬 PERSONAL CHAT LOG                 ') + chalk.blue('│') + '\n'
       logTxt += chalk.blue('├──────────────────────────────────────────────────┤') + '\n'
       logTxt += chalk.blue('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
-      logTxt += chalk.blue('│') + chalk.white(` 👤 From   : ${senderDisplay}`) + '\n'
+      logTxt += chalk.blue('│') + chalk.white(` 👤 From   : ${senderName}`) + '\n'
+      logTxt += chalk.blue('│') + chalk.white(` 🆔 ID     : ${senderIdNum}`) + '\n'
       logTxt += chalk.blue('│') + chalk.cyan(` 💬 Text   : ${formattedChats}`) + '\n'
       logTxt += chalk.blue('╰──────────────────────────────────────────────────╯')
       console.log(logTxt)
@@ -293,7 +346,8 @@ module.exports = async (conn, msg, m, setting, store) => {
       logTxt += chalk.yellow('│') + chalk.yellow.bold('             👥 GROUP CHAT LOG                    ') + chalk.yellow('│') + '\n'
       logTxt += chalk.yellow('├──────────────────────────────────────────────────┤') + '\n'
       logTxt += chalk.yellow('│') + chalk.white(` 🕒 Time   : ${timeFormatted}`) + '\n'
-      logTxt += chalk.yellow('│') + chalk.white(` 👤 Sender : ${senderDisplay}`) + '\n'
+      logTxt += chalk.yellow('│') + chalk.white(` 👤 Sender : ${senderName}`) + '\n'
+      logTxt += chalk.yellow('│') + chalk.white(` 🆔 ID     : ${senderIdNum}`) + '\n'
       logTxt += chalk.yellow('│') + chalk.white(` 🏘️ Group  : ${groupName || 'Group Chat'}`) + '\n'
       logTxt += chalk.yellow('│') + chalk.yellowBright(` 💬 Text   : ${formattedChats}`) + '\n'
       logTxt += chalk.yellow('╰──────────────────────────────────────────────────╯')
