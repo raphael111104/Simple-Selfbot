@@ -152,7 +152,6 @@ module.exports = async (conn, msg, m, setting, store) => {
         }
       },
         {
-          sendEphemeral: true,
           quoted: quo
         })
     }
@@ -174,7 +173,6 @@ module.exports = async (conn, msg, m, setting, store) => {
         }
       },
         {
-          sendEphemeral: true,
           quoted: quo
         })
     }
