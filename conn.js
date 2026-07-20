@@ -12,6 +12,7 @@ const { webp2mp4File } = require("./function/Webp_Tomp4")
 //module
 const { File } = require("megajs")
 const { downloadYouTube, searchYouTube } = require('./function/youtube')
+const { downloadInstagram } = require('./function/instagram')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
@@ -56,12 +57,54 @@ module.exports = async (conn, msg, m, setting, store) => {
     if (!chats) { chats = '' }
     const prefix = setting.prefix
     const isGroup = msg.key.remoteJid.endsWith('@g.us')
-    const rawSender = msg.key.fromMe
-      ? (conn.user.id.split(':')[0] + '@s.whatsapp.net')
+    const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => ({})) : {}
+    const groupName = isGroup ? (groupMetadata.subject || '') : ''
+    const groupId = isGroup ? (groupMetadata.id || '') : ''
+    const groupMembers = isGroup ? (groupMetadata.participants || []) : []
+    const participants = groupMembers
+    const groupAdmins = isGroup ? getGroupAdmins(groupMembers) : []
+    const botNumber = conn.user.id.split(':')[0] + '@s.whatsapp.net'
+    const isBotGroupAdmins = groupAdmins.includes(botNumber) || false
+
+    const botNum = conn.user?.id ? conn.user.id.split('@')[0].split(':')[0] : ''
+    const botPhoneJid = botNum ? `${botNum}@s.whatsapp.net` : ''
+
+    const initialSender = msg.key.fromMe
+      ? (botPhoneJid || (conn.user.id.split(':')[0] + '@s.whatsapp.net'))
       : (msg.sender || (isGroup ? (msg.key.participant || msg.participant) : msg.key.remoteJid))
-    const sender = conn.decodeJid(rawSender)
-    const senderNum = sender ? sender.split('@')[0].split(':')[0] : ''
-    const senderPhone = senderNum ? (senderNum.startsWith('+') ? senderNum : `+${senderNum}`) : ''
+
+    let realSenderJid = conn.decodeJid(initialSender)
+    let phoneNumStr = ''
+
+    if (msg.key.fromMe && botNum && /^[0-9]{7,15}$/.test(botNum)) {
+      phoneNumStr = `+${botNum}`
+    } else {
+      if (groupMembers && groupMembers.length > 0) {
+        const found = groupMembers.find(p => p.id === initialSender || p.lid === initialSender || p.id === realSenderJid || p.lid === realSenderJid)
+        if (found) {
+          const target = found.pn || (found.id?.endsWith('@s.whatsapp.net') ? found.id : '')
+          if (target) {
+            const num = target.split('@')[0].split(':')[0]
+            if (/^[0-9]{7,15}$/.test(num)) {
+              phoneNumStr = `+${num}`
+              realSenderJid = `${num}@s.whatsapp.net`
+            }
+          }
+        }
+      }
+
+      if (!phoneNumStr) {
+        const num = realSenderJid ? realSenderJid.split('@')[0].split(':')[0] : ''
+        if (num && /^[0-9]{7,15}$/.test(num)) {
+          phoneNumStr = `+${num}`
+        } else {
+          phoneNumStr = num ? (num.startsWith('+') ? num : `+${num}`) : ''
+        }
+      }
+    }
+
+    const sender = realSenderJid
+    const senderPhone = phoneNumStr
     const isOwner = [`${setting.ownerNumber}@s.whatsapp.net`].includes(sender) ? true : false
     const pushname = msg.pushName
     const senderDisplay = pushname ? `${pushname} (${senderPhone})` : senderPhone
@@ -72,15 +115,6 @@ module.exports = async (conn, msg, m, setting, store) => {
     const commandText = body.slice(prefix.length).trim()
     const command = commandText.split(/ +/).shift().toLowerCase()
     const isCmd = isCommand ? command : null;
-    const botNumber = conn.user.id.split(':')[0] + '@s.whatsapp.net'
-
-    const groupMetadata = isGroup ? await conn.groupMetadata(from).catch(() => ({})) : {}
-    const groupName = isGroup ? (groupMetadata.subject || '') : ''
-    const groupId = isGroup ? (groupMetadata.id || '') : ''
-    const groupMembers = isGroup ? (groupMetadata.participants || []) : []
-    const participants = groupMembers
-    const groupAdmins = isGroup ? getGroupAdmins(groupMembers) : []
-    const isBotGroupAdmins = groupAdmins.includes(botNumber) || false
     const isGroupAdmins = groupAdmins.includes(sender)
 
     const quoted = msg.quoted ? msg.quoted : msg
@@ -319,6 +353,8 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}ytmp3\n`
           cptn += `• ${prefix}ytmp4\n`
           cptn += `• ${prefix}tiktok\n`
+          cptn += `• ${prefix}igdl\n`
+          cptn += `• ${prefix}instagramdl\n`
           cptn += `• ${prefix}mediafire\n`
           cptn += `• ${prefix}mega\n\n`
           cptn += `_Tools_\n`
@@ -451,6 +487,33 @@ https://github.com/dragneel1111/Simple-Selfbot
             caption: cptn,
           },
             { quoted: msg })
+        }
+        break
+
+      case 'igdl':
+      case 'instagramdl':
+      case 'ig':
+      case 'instagram':
+        if (!q) return reply(`Contoh penggunaan:\n${prefix + command} https://www.instagram.com/p/DB1n-K1yT5P/`)
+        if (!isUrl(q) || !q.includes('instagram.com')) return reply('URL tidak valid! Masukkan link postingan, reel, atau carousel Instagram.')
+
+        reply('*_Mohon tunggu sebentar, sedang mengunduh media Instagram..._*')
+        try {
+          const mediaResults = await downloadInstagram(q)
+          if (!mediaResults || mediaResults.length === 0) {
+            return reply('Gagal mengambil media dari link Instagram tersebut. Pastikan postingan publik!')
+          }
+
+          for (const item of mediaResults) {
+            if (item.type === 'video') {
+              await conn.sendMessage(from, { video: { url: item.url }, caption: setting.wm }, { quoted: msg })
+            } else {
+              await conn.sendMessage(from, { image: { url: item.url }, caption: setting.wm }, { quoted: msg })
+            }
+            await sleep(500)
+          }
+        } catch (err) {
+          reply(`Terjadi kesalahan saat mendownload Instagram:\n${err.message}`)
         }
         break
 
