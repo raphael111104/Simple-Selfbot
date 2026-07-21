@@ -8,7 +8,7 @@ const messages = new Map();
 
 const keyFor = (key = {}) => `${key.remoteJid || ''}:${key.id || ''}`;
 
-const Memory_Store = {
+const messageStore = {
   bind(eventEmitter) {
     eventEmitter.on('messages.upsert', ({ messages: incoming = [] }) => {
       for (const message of incoming) {
@@ -27,4 +27,4 @@ const Memory_Store = {
   }
 };
 
-module.exports = { Memory_Store };
+module.exports = { messageStore };

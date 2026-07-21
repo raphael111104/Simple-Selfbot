@@ -9,10 +9,10 @@ const chalk = require('chalk');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 
-const { serialize, getBuffer } = require('./function/func_Server');
-const { status_Connection } = require('./function/Data_Server_Bot/Status_Connect');
-const { Memory_Store } = require('./function/Data_Server_Bot/Memory_Store');
-const { color } = require('./function/Data_Server_Bot/Console_Data');
+const { serialize, getBuffer } = require('./function/utils');
+const { handleConnectionUpdate } = require('./function/connection');
+const { messageStore } = require('./function/message-store');
+const { color } = require('./function/console');
 
 process.chdir(__dirname);
 
@@ -120,12 +120,12 @@ async function connectToWhatsApp() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, botLogger)
     },
-    getMessage: async key => Memory_Store.get(key)?.message
+    getMessage: async key => messageStore.get(key)?.message
   });
 
   currentSocket = conn;
   title();
-  if (useStore) Memory_Store.bind(conn.ev);
+  if (useStore) messageStore.bind(conn.ev);
 
   conn.ev.on('creds.update', saveCreds);
 
@@ -157,7 +157,7 @@ async function connectToWhatsApp() {
       }
     }
 
-    await status_Connection(conn, update, connectToWhatsApp, DisconnectReason);
+    await handleConnectionUpdate(conn, update, connectToWhatsApp, DisconnectReason);
   });
 
   conn.ev.on('messages.upsert', async event => {
@@ -170,7 +170,7 @@ async function connectToWhatsApp() {
       const msg = serialize(conn, rawMessage);
 
       try {
-        await messageHandler(conn, msg, event, setting, Memory_Store);
+        await messageHandler(conn, msg, event, setting, messageStore);
       } catch (error) {
         console.error('Message handler failed:', error);
       }

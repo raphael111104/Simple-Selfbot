@@ -12,7 +12,7 @@ Simple SelfBot adalah bot WhatsApp pribadi berbasis [Baileys](https://github.com
 - Downloader YouTube, TikTok, Instagram, MediaFire, dan Mega.
 - Dukungan post, Reel/video, carousel campuran, dan album gambar native WhatsApp untuk Instagram.
 - Converter sticker, gambar, video, audio, dan upload media.
-- Quick-reply button native WhatsApp pada command `test`.
+- Fake quoted location dengan thumbnail `sticker/location-thumbnail.jpg` dan quick-reply button pada command `test`.
 - Pengaturan foto profil tanpa memaksa gambar menjadi persegi.
 - Alat grup seperti tag all, hidden tag, info grup, dan foto profil grup.
 - Penyimpanan session multi-file dan memory store opsional.
@@ -44,7 +44,7 @@ Sesuaikan `config.json` sebelum menjalankan bot:
   "botName": "Simple-SelfBot",
   "prefix": "!",
   "ownerName": "Nama Anda",
-  "wm": "Simple SelfBot"
+  "watermark": "Simple SelfBot"
 }
 ```
 
@@ -100,7 +100,7 @@ Command `test` merupakan pengecualian dan dapat dikirim tanpa prefix:
 test
 ```
 
-Output-nya menampilkan status bot dan spesifikasi server, dengan button menuju command Menu dan Creator. `!test` tetap didukung.
+Output-nya menampilkan fake quoted location dengan thumbnail `sticker/location-thumbnail.jpg`, status bot, spesifikasi server, serta button menuju command Menu dan Creator. Thumbnail dinormalisasi terlebih dahulu agar kompatibel dengan renderer WhatsApp. `!test` tetap didukung.
 
 ### Menu dan informasi
 
@@ -158,11 +158,10 @@ Instagram Story dan akun private tidak didukung. Carousel yang seluruh medianya 
 | --- | --- | --- |
 | `!setprefix <prefix>` | — | Mengubah prefix dan menyimpannya ke `config.json`. |
 | `!setppbot` | `!setpp`, `!spb` | Mengubah foto profil akun bot. |
-| `!setmenu` | — | Mengubah gambar menu. |
 | `!setthumb` | — | Mengubah thumbnail. |
-| `!setadreply` | — | Mengubah gambar ad-reply. |
-| `!addrespon key\|jawaban` | — | Menambahkan respons otomatis grup. |
-| `!delrespon <key>` | — | Menghapus respons otomatis grup. |
+| `!setlocationthumb` | `!setlocthumb` | Mengubah thumbnail fake location. |
+| `!addresponse key\|jawaban` | — | Menambahkan respons otomatis grup. |
+| `!delresponse <key>` | — | Menghapus respons otomatis grup. |
 | `!error` | — | Menampilkan daftar error tersimpan. |
 | `!clear` | `!clearer`, `!clearerr` | Menghapus daftar error tersimpan. |
 | `!session` | `!mysesi`, `!sendsesi` | Menampilkan peringatan keamanan; pengiriman session dinonaktifkan. |

@@ -9,7 +9,7 @@ const { promisify } = require('util');
 const ffmpegPath = require('ffmpeg-static');
 const sharp = require('sharp');
 const webp = require('node-webpmux');
-const { getBuffer } = require('./func_Server');
+const { getBuffer } = require('./utils');
 
 const execFileAsync = promisify(execFile);
 

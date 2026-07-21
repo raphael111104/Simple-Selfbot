@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const sharp = require('sharp');
 const {
+  FAKE_LOCATION_THUMBNAIL_WIDTH,
   buildInteractiveBizNode,
   parseNativeFlowResponse,
   sendQuickReplyButtons
@@ -87,6 +90,42 @@ test('sendQuickReplyButtons relays two native quick-reply buttons', async () => 
   assert.equal(roundTrip.interactiveMessage.nativeFlowMessage.buttons.length, 2);
 });
 
+test('fake location quote keeps synthetic addressing for group and LID chats', async () => {
+  const thumbnail = fs.readFileSync('./sticker/location-thumbnail.jpg');
+  const destinations = [
+    '120363000000000000@g.us',
+    '123456789012345@lid'
+  ];
+
+  for (const jid of destinations) {
+    let relayed;
+    const conn = {
+      user: { id: '628123456789:1@s.whatsapp.net' },
+      async relayMessage(destination, message, options) {
+        relayed = { destination, message, options };
+      }
+    };
+
+    const generated = await sendQuickReplyButtons(conn, jid, {
+      title: 'Simple Selfbot',
+      text: 'Selfbot online',
+      footer: 'Simple Selfbot',
+      location: {
+        name: 'Simple Selfbot Online',
+        jpegThumbnail: thumbnail
+      },
+      buttons: [{ id: '!menu', text: 'Menu' }]
+    });
+
+    const contextInfo = relayed.message.interactiveMessage.contextInfo;
+    assert.equal(relayed.destination, jid);
+    assert.equal(generated.key.remoteJid, jid);
+    assert.equal(contextInfo.participant, '0@s.whatsapp.net');
+    assert.equal(contextInfo.remoteJid, 'status@broadcast');
+    assert.ok(contextInfo.quotedMessage.locationMessage.jpegThumbnail.length > 0);
+  }
+});
+
 test('test command relays a render-compatible payload without a prefix', async t => {
   t.mock.method(console, 'log', () => {});
   t.mock.method(console, 'error', () => {});
@@ -132,10 +171,41 @@ test('test command relays a render-compatible payload without a prefix', async t
   assert.equal(sentMessage.viewOnceMessage, null);
   assert.equal(sentMessage.messageContextInfo, null);
   assert.match(sentMessage.interactiveMessage.body.text, /SELFBOT ONLINE/);
-  assert.equal(sentMessage.interactiveMessage.contextInfo, null);
+  const header = sentMessage.interactiveMessage.header;
+  assert.equal(header.hasMediaAttachment, false);
+  assert.equal(header.locationMessage, null);
+
+  const contextInfo = sentMessage.interactiveMessage.contextInfo;
+  const fakeLocation = contextInfo.quotedMessage.locationMessage;
+  const sourceThumbnail = fs.readFileSync('./sticker/location-thumbnail.jpg');
+  const renderedThumbnail = Buffer.from(fakeLocation.jpegThumbnail);
+  assert.equal(fakeLocation.name, `${setting.botName} Online`);
+  assert.equal(fakeLocation.address, 'Jakarta, Indonesia');
+  assert.match(contextInfo.stanzaId, /^3EB0[0-9A-F]+$/i);
+  assert.equal(contextInfo.participant, '0@s.whatsapp.net');
+  assert.equal(contextInfo.remoteJid, 'status@broadcast');
+  assert.ok(renderedThumbnail.length < sourceThumbnail.length);
+  assert.notEqual(Buffer.compare(renderedThumbnail, sourceThumbnail), 0);
+
+  const thumbnailMetadata = await sharp(renderedThumbnail).metadata();
+  assert.equal(thumbnailMetadata.format, 'jpeg');
+  assert.equal(thumbnailMetadata.width, FAKE_LOCATION_THUMBNAIL_WIDTH);
+  assert.equal(thumbnailMetadata.isProgressive, false);
   assert.deepEqual(relayed[0].options.additionalNodes, [buildInteractiveBizNode()]);
   assert.deepEqual(
     sentMessage.interactiveMessage.nativeFlowMessage.buttons.map(button => JSON.parse(button.buttonParamsJson).id),
     [`${setting.prefix}menu`, `${setting.prefix}creator`]
+  );
+
+  const { proto } = await import('baileys');
+  const roundTrip = proto.Message.decode(proto.Message.encode(sentMessage).finish());
+  const roundTripLocation = roundTrip.interactiveMessage.contextInfo.quotedMessage.locationMessage;
+  assert.equal(roundTripLocation.name, `${setting.botName} Online`);
+  assert.equal(
+    Buffer.compare(
+      Buffer.from(roundTripLocation.jpegThumbnail),
+      renderedThumbnail
+    ),
+    0
   );
 });

@@ -1,13 +1,14 @@
 "use strict";
+const fs = require("fs");
+const path = require("path");
 const { execFile } = require("child_process");
 const ffmpegPath = require('ffmpeg-static');
-const { color, bgcolor, pickRandom, randomNomor } = require('./function/Data_Server_Bot/Console_Data')
-const { removeEmojis, bytesToSize, getBuffer, fetchJson, getRandom, getGroupAdmins, runtime, sleep, makeid, isUrl } = require("./function/func_Server");
-const { TelegraPh } = require("./function/uploader_Media");
-const { addResponList, delResponList, isAlreadyResponList, isAlreadyResponListGroup, sendResponList, updateResponList, getDataResponList } = require('./function/func_Addlist');
-const { setting_JSON, server_eror_JSON, db_respon_list_JSON } = require('./function/Data_Location.js')
-const { mediafireDl } = require('./function/scrape_Mediafire')
-const { webp2mp4File } = require("./function/Webp_Tomp4")
+const { color } = require('./function/console')
+const { fetchJson, getRandom, getGroupAdmins, runtime, sleep } = require("./function/utils");
+const { uploadToTelegraph } = require("./function/uploader");
+const { addResponse, deleteResponse, getResponse, hasResponse } = require('./function/responses');
+const { downloadMediafire } = require('./function/mediafire')
+const { convertWebpToMp4 } = require("./function/webp-to-mp4")
 
 //module
 const { File } = require("megajs")
@@ -17,7 +18,6 @@ const { sendImageAlbum } = require('./function/album')
 const { parseNativeFlowResponse, sendQuickReplyButtons } = require('./function/buttons')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
-const fs = require("fs");
 const ms = require("ms");
 const chalk = require('chalk');
 const axios = require("axios");
@@ -26,11 +26,17 @@ const util = require("util");
 const { createSticker } = require('./function/sticker');
 const os = require("os");
 
+const ERROR_LOG_PATH = path.join(__dirname, 'database', 'errors.json');
+const RESPONSE_LIST_PATH = path.join(__dirname, 'database', 'responses.json');
 
-// DB
-const setting = setting_JSON
-const server_eror = server_eror_JSON
-const db_respon_list = db_respon_list_JSON
+function loadJsonArray(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return Array.isArray(value) ? value : [];
+}
+
+const errorLog = loadJsonArray(ERROR_LOG_PATH);
+const responseList = loadJsonArray(RESPONSE_LIST_PATH);
 
 moment.tz.setDefault("Asia/Jakarta").locale("id");
 module.exports = async (conn, msg, m, setting, store) => {
@@ -256,19 +262,9 @@ module.exports = async (conn, msg, m, setting, store) => {
       return emo.match(regexEmoji)
     }
 
-    const reply = (teks) => { conn.sendMessage(from, { text: teks }, { quoted: msg }) }
+    const reply = (text) => conn.sendMessage(from, { text }, { quoted: msg })
 
-    const adReply = async (teks, judul = setting.wm, isi = setting.botName, quo) => {
-      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : fstatus;
-      return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
-    }
-
-    const adReply2 = async (teks, judul = setting.wm, isi = setting.botName, quo) => {
-      const validQuoted = (quo && typeof quo === 'object' && quo.key) ? quo : fstatus;
-      return conn.sendMessage(from, { text: teks }, { quoted: validQuoted });
-    }
-
-    const fstatus = {
+    const fakeStatusQuote = {
       key: {
         fromMe: false,
         participant: `0@s.whatsapp.net`,
@@ -278,7 +274,7 @@ module.exports = async (conn, msg, m, setting, store) => {
         imageMessage: {
           url: "https://mmg.whatsapp.net/d/f/At0x7ZdIvuicfjlf9oWS6A3AR9XPh0P-hZIVPLsI70nM.enc",
           mimetype: "image/jpeg",
-          caption: setting.wm,
+          caption: setting.watermark,
           fileSha256: "+Ia+Dwib70Y1CWRMAP9QLJKjIJt54fKycOfB2OEZbTU=",
           fileLength: "28777",
           height: 1080,
@@ -288,22 +284,21 @@ module.exports = async (conn, msg, m, setting, store) => {
           directPath:
             "/v/t62.7118-24/21427642_840952686474581_572788076332761430_n.enc?oh=3f57c1ba2fcab95f2c0bb475d72720ba&oe=602F3D69",
           mediaKeyTimestamp: "1610993486",
-          jpegThumbnail: fs.readFileSync("./sticker/thumb.jpg"),
+          jpegThumbnail: fs.readFileSync(path.join(__dirname, 'sticker', 'thumb.jpg')),
           scansSidecar:
             "1W0XhfaAcDwc7xh1R8lca6Qg/1bB4naFCSngM2LKO2NoP5RI7K+zLw==",
         },
       },
     }
 
-    if (!isCmd && isGroup && isAlreadyResponList(from, chats, db_respon_list)) {
-      var get_data_respon = getDataResponList(from, chats, db_respon_list)
-      if (get_data_respon.isImage === false) {
-        adReply(sendResponList(from, chats, db_respon_list), groupName, tanggal, msg)
-      } else {
-        conn.sendMessage(from, { image: await getBuffer(get_data_respon.image_url), caption: get_data_respon.response }, {
-          quoted: msg
-        })
-      }
+    const sendTextReply = async (text, quotedMessage) => {
+      const validQuote = quotedMessage?.key ? quotedMessage : fakeStatusQuote;
+      return conn.sendMessage(from, { text }, { quoted: validQuote });
+    }
+
+    if (!isCmd && isGroup && hasResponse(from, chats, responseList)) {
+      const storedResponse = getResponse(from, chats, responseList)
+      sendTextReply(storedResponse.response, msg)
     }
 
     const sendContact = (jid, numbers, name, quoted, mn) => {
@@ -428,7 +423,12 @@ https://github.com/dragneel1111/Simple-Selfbot`
           await sendQuickReplyButtons(conn, from, {
             title: setting.botName,
             text: testCaptionCmd,
-            footer: setting.wm,
+            footer: setting.watermark,
+            location: {
+              name: `${setting.botName} Online`,
+              address: 'Jakarta, Indonesia',
+              jpegThumbnail: fs.readFileSync(path.join(__dirname, 'sticker', 'location-thumbnail.jpg'))
+            },
             buttons: [
               { id: `${prefix}menu`, text: 'Menu' },
               { id: `${prefix}creator`, text: 'Creator' }
@@ -436,7 +436,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
           })
         } catch (error) {
           console.error('[TEST BUTTON ERROR]', error)
-          await adReply(testCaptionCmd, `${tanggal}`, `${jam}`, msg)
+          await sendTextReply(testCaptionCmd, msg)
         }
         console.log(color(`[ SELFBOT ONLINE || RUNTIME: ${runtime(process.uptime())} ] ${tanggal}`, 'cyan'))
         break
@@ -470,19 +470,18 @@ https://github.com/dragneel1111/Simple-Selfbot`
           cptn += `• ${prefix}forward\n`
           cptn += `• ${prefix}readmore\n`
           cptn += `• ${prefix}hidetag\n\n`
-          cptn += `${setting.wm}\n_Create by @Rafli A.~_\n_Since 01-12-2020_`
-          adReply2(cptn, setting.wm, setting.botName)
+          cptn += `${setting.watermark}\n_Create by @Rafli A.~_\n_Since 01-12-2020_`
+          sendTextReply(cptn)
         } else if (q.includes('owner')) {
           var cptn = `_Owner Tools_\n`
           cptn += `• ${prefix}setprefix\n`
-          cptn += `• ${prefix}setmenu\n`
-          cptn += `• ${prefix}setadreply\n`
+          cptn += `• ${prefix}setlocationthumb\n`
           cptn += `• ${prefix}setthumb\n`
           cptn += `• ${prefix}error\n`
           cptn += `• ${prefix}clear\n`
-          cptn += `• ${prefix}addrespon\n`
-          cptn += `• ${prefix}delrespon\n`
-          adReply(cptn, tanggal, jam)
+          cptn += `• ${prefix}addresponse\n`
+          cptn += `• ${prefix}delresponse\n`
+          sendTextReply(cptn)
         }
         break
 
@@ -495,8 +494,8 @@ https://github.com/dragneel1111/Simple-Selfbot`
         if (!q) return reply(`example:\n${prefix + command} https://mega.nz/file/0FUA2bzb#vSu3Ud9Ft_HDz6zPvfIg_y62vE1qF8EmoYT3kY16zxo`)
         var file = File.fromURL(q)
         await file.loadAttributes()
-        if (file.size >= 300000000) return adReply('Minimum Size: 300MB', 'Error: file size is too large ')
-        adReply(`*_Please wait a few minutes..._*`, file.name, 'downloading...')
+        if (file.size >= 300000000) return sendTextReply('Minimum Size: 300MB')
+        sendTextReply(`*_Please wait a few minutes..._*`)
         var data = await file.downloadBuffer()
         await conn.sendMessage(from, {
           document: data,
@@ -555,7 +554,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
           cptn += `• views: ${y.viewH}\n`
           cptn += `• url: ${y.url}\n\n`
         }
-        adReply(cptn, q, 'Youtube Search', msg)
+        sendTextReply(cptn, msg)
         break
 
       case 'tiktok':
@@ -572,7 +571,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
           cptn += `*Download Count:* ${hasil.download_count}\n`
           cptn += `*Images Count:* ${url.length}\n`
           cptn += `\n${hasil.title}`
-          await adReply(cptn, "Uploading Media...", "Tiktok Downloader", msg)
+          await sendTextReply(cptn, msg)
           await sleep(500)
           for (let o = 0; o < url.length; o++) {
             await conn.sendMessage(from, {
@@ -613,7 +612,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
           if (postInfo.username) caption += `\n• Owner: @${postInfo.username}`
           if (postInfo.caption) caption += `\n\n${postInfo.caption.slice(0, 800)}`
 
-          await adReply(`Ditemukan ${items.length} media. Sedang mengirim...`, mediaLabel, 'Instagram Downloader', msg)
+          await sendTextReply(`Ditemukan ${items.length} media. Sedang mengirim...`, msg)
 
           const sendRegularItem = async (index) => {
             const item = items[index]
@@ -659,37 +658,40 @@ https://github.com/dragneel1111/Simple-Selfbot`
         if (!q) return reply('*example:*\n#mediafire https://www.mediafire.com/file/451l493otr6zca4/V4.zip/file')
         let isLinks = q.match(/(?:https?:\/{2})?(?:w{3}\.)?mediafire(?:com)?\.(?:com|be)(?:\/www\?v=|\/)([^\s&]+)/)
         if (!isLinks) return reply('Invalid Link')
-        let baby1 = await mediafireDl(isLinks[0])
-        if (baby1[0].size.split('MB')[0] >= 1500) return reply('File Melebihi Batas ' + util.format(baby1))
+        const mediafireFile = await downloadMediafire(isLinks[0])
+        if (mediafireFile.size.split('MB')[0] >= 1500) return reply('File Melebihi Batas ' + util.format(mediafireFile))
         let result4 = `*MEDIAFIRE DOWNLOADER*
 
-*Name* : ${baby1[0].nama}
-*Size* : ${baby1[0].size}
-*Type* : ${baby1[0].mime}
+*Name* : ${mediafireFile.name}
+*Size* : ${mediafireFile.size}
+*Type* : ${mediafireFile.mimeType}
 
 _Wait Mengirim file..._
 `
-        adReply(result4, `${baby1[0].nama}`, ``)
-        conn.sendMessage(from, { document: { url: baby1[0].link }, fileName: baby1[0].nama, mimetype: baby1[0].mime }, { quoted: msg }).catch((err) => adReply('*Failed to uploading media*', 'ERROR'))
+        sendTextReply(result4)
+        conn.sendMessage(from, {
+          document: { url: mediafireFile.url },
+          fileName: mediafireFile.name,
+          mimetype: mediafireFile.mimeType
+        }, { quoted: msg }).catch(() => sendTextReply('*Failed to upload media*'))
         break
 
       // Owner tools
 
-      case 'setmenu':
-        if (isImage || isQuotedImage) {
-          await conn.downloadAndSaveMediaMessage(msg, 'image', `./sticker/menu.jpg`)
-        }
-        reply('Done')
-        break
       case 'setthumb':
         if (isImage || isQuotedImage) {
           await conn.downloadAndSaveMediaMessage(msg, 'image', `./sticker/thumb.jpg`)
         }
         reply('Done')
         break
-      case 'setadreply':
+      case 'setlocationthumb':
+      case 'setlocthumb':
         if (isImage || isQuotedImage) {
-          await conn.downloadAndSaveMediaMessage(msg, 'image', `./sticker/adreply.jpg`)
+          await conn.downloadAndSaveMediaMessage(
+            msg,
+            'image',
+            path.join(__dirname, 'sticker', 'location-thumbnail.jpg')
+          )
         }
         reply('Done')
         break
@@ -720,33 +722,33 @@ _Wait Mengirim file..._
       case 'clear':
       case 'clearer':
       case 'clearerr': {
-        server_eror.length = 0
-        fs.writeFileSync('./database/func_error.json', JSON.stringify(server_eror))
+        errorLog.length = 0
+        fs.writeFileSync(ERROR_LOG_PATH, JSON.stringify(errorLog, null, 2))
         reply('Done')
       }
         break
       case 'error': {
-        var teks = `*ERROR SERVER*\n_Error total_ : ${server_eror.length}\n\n`
+        var teks = `*ERROR SERVER*\n_Error total_ : ${errorLog.length}\n\n`
         var NO = 1
-        for (let i of server_eror) {
+        for (let i of errorLog) {
           teks += `=> *ERROR (${NO++})*\n${i.error}\n\n`
         }
-        adReply(teks, "List Error", "")
+        sendTextReply(teks)
       }
         break
-      case 'addrespon':
+      case 'addresponse':
         var args1 = q.split("|")[0]
         var args2 = q.split("|")[1]
         if (!q.includes("|")) return reply(`use ${prefix + command} *key|response*\n\n_example_\n\n#${command} tes|apa`)
-        if (isAlreadyResponList(from, args1, db_respon_list)) return reply(`Response key : *${args1}* already added in this group`)
-        addResponList(from, args1, args2, false, '-', db_respon_list)
+        if (hasResponse(from, args1, responseList)) return reply(`Response key : *${args1}* already added in this group`)
+        addResponse(from, args1, args2, responseList)
         reply(`Success add key: *${args1}*`)
         break
-      case 'delrespon':
-        if (db_respon_list.length === 0) return reply(`not found`)
+      case 'delresponse':
+        if (responseList.length === 0) return reply(`not found`)
         if (!q) return reply(`use: ${prefix + command} *key*\n\n_example_\n\n${command} hello`)
-        if (!isAlreadyResponList(from, q, db_respon_list)) return reply(`List response key: *${q}* not found in database!`)
-        delResponList(from, q, db_respon_list)
+        if (!hasResponse(from, q, responseList)) return reply(`List response key: *${q}* not found in database!`)
+        deleteResponse(from, q, responseList)
         reply(`Success delete key: *${q}*`)
         break
 
@@ -813,7 +815,7 @@ _Wait Mengirim file..._
             itemCount: 1,
             status: 1,
             surface: 1,
-            message: q ? q : setting.wm,
+            message: q ? q : setting.watermark,
             orderTitle: setting.botName,
             sellerJid: '0@s.whatsapp.net',
             totalAmount1000: 999000,
@@ -894,7 +896,7 @@ _Wait Mengirim file..._
           let buffer_up = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
           var rand2 = 'sticker/' + getRandom('.mp4')
           fs.writeFileSync(`./${rand2}`, buffer_up)
-          var text = await TelegraPh(rand2)
+          var text = await uploadToTelegraph(rand2)
           reply(text)
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
           fs.unlinkSync(rand2)
@@ -903,7 +905,7 @@ _Wait Mengirim file..._
           let buffer_up = fs.readFileSync(mediany)
           var rand2 = 'sticker/' + getRandom('.png')
           fs.writeFileSync(`./${rand2}`, buffer_up)
-          var text = await TelegraPh(rand2)
+          var text = await uploadToTelegraph(rand2)
           reply(text)
           fs.unlinkSync(mediany)
           fs.unlinkSync(rand2)
@@ -939,7 +941,7 @@ _Wait Mengirim file..._
         if (isSticker || isQuotedSticker) {
           await conn.downloadAndSaveMediaMessage(msg, "sticker", `./sticker/${sender.split("@")[0]}.webp`)
           let buffer = `./sticker/${sender.split("@")[0]}.webp`
-          let webpToMp4 = await webp2mp4File(buffer)
+          let webpToMp4 = await convertWebpToMp4(buffer)
           conn.sendMessage(from, { video: webpToMp4.result, caption: 'Convert Webp To Video', jpegThumbnail: fs.readFileSync('./sticker/thumb.jpg') }, { quoted: msg })
           fs.unlinkSync(buffer)
         } else {
@@ -978,9 +980,9 @@ _Wait Mengirim file..._
         if (!q) return reply(`Kirim gambar dengan caption ${prefix + command} text_atas|text_bawah atau balas gambar yang sudah dikirim`)
         if (isImage || isQuotedImage) {
           var media = await conn.downloadAndSaveMediaMessage(msg, 'image', `./sticker/${sender.split('@')[0]}.jpg`)
-          var media_url = await TelegraPh(media)
+          var media_url = await uploadToTelegraph(media)
           var meme_url = `https://api.memegen.link/images/custom/${encodeURIComponent(atas)}/${encodeURIComponent(bawah)}.png?background=${media_url}`
-          var buffer = await createSticker(meme_url, { author: setting.wm, quality: 50 })
+          var buffer = await createSticker(meme_url, { author: setting.watermark, quality: 50 })
           conn.sendMessage(from, { sticker: buffer, fileLength: 1000000000000 }, { quoted: msg })
           fs.unlinkSync(media)
         }
@@ -1008,13 +1010,13 @@ _Wait Mengirim file..._
         if (isImage || isQuotedImage) {
           await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split("@")[0]}.jpeg`)
           let stci = fs.readFileSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-          var buffer = await createSticker(stci, { author: setting.wm, quality: 75 })
+          var buffer = await createSticker(stci, { author: setting.watermark, quality: 75 })
           conn.sendMessage(from, { sticker: buffer, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.jpeg`)
         } else if ((isVideo && msg.message.videoMessage.seconds < 10) || (isQuotedVideo && quotedMsg?.videoMessage?.seconds < 10)) {
           await conn.downloadAndSaveMediaMessage(msg, "video", `./sticker/${sender.split("@")[0]}.mp4`)
           let stcg = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
-          const stikk = await createSticker(stcg, { author: setting.wm, quality: 20, video: true })
+          const stikk = await createSticker(stcg, { author: setting.watermark, quality: 20, video: true })
           conn.sendMessage(from, { sticker: stikk, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
         }
@@ -1023,13 +1025,13 @@ _Wait Mengirim file..._
         if (isImage || isQuotedImage) {
           await conn.downloadAndSaveMediaMessage(msg, "image", `./sticker/${sender.split("@")[0]}.jpeg`)
           let stci = fs.readFileSync(`./sticker/${sender.split("@")[0]}.jpeg`)
-          var buffer = await createSticker(stci, { author: setting.wm, quality: 75, cropped: true })
+          var buffer = await createSticker(stci, { author: setting.watermark, quality: 75, cropped: true })
           conn.sendMessage(from, { sticker: buffer, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.jpeg`)
         } else if ((isVideo && msg.message.videoMessage.seconds < 10) || (isQuotedVideo && quotedMsg?.videoMessage?.seconds < 10)) {
           await conn.downloadAndSaveMediaMessage(msg, "video", `./sticker/${sender.split("@")[0]}.mp4`)
           let stcg = fs.readFileSync(`./sticker/${sender.split("@")[0]}.mp4`)
-          const stikk = await createSticker(stcg, { author: setting.wm, quality: 20, cropped: true, video: true })
+          const stikk = await createSticker(stcg, { author: setting.watermark, quality: 20, cropped: true, video: true })
           conn.sendMessage(from, { sticker: stikk, fileLength: 99999999 }, { quoted: msg })
           fs.unlinkSync(`./sticker/${sender.split("@")[0]}.mp4`)
         }
@@ -1040,7 +1042,7 @@ _Wait Mengirim file..._
     }
   } catch (err) {
     console.log(color('[ERROR]', 'red'), err)
-    server_eror.push({ "error": `${err}` })
-    fs.writeFileSync('./database/func_error.json', JSON.stringify(server_eror))
+    errorLog.push({ error: String(err) })
+    fs.writeFileSync(ERROR_LOG_PATH, JSON.stringify(errorLog, null, 2))
   }
 }

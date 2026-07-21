@@ -2,7 +2,7 @@
 
 let reconnectTimer;
 
-exports.status_Connection = async (conn, update, connectToWhatsApp, DisconnectReason) => {
+exports.handleConnectionUpdate = async (conn, update, connectToWhatsApp, DisconnectReason) => {
   const { connection, lastDisconnect } = update;
 
   if (connection === 'open') {

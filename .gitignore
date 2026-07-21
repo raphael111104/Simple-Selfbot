@@ -1,5 +1,6 @@
 node_modules/
 sessions/
+database/errors.json
 *.log
 sticker/*.mp3
 sticker/*.mp4

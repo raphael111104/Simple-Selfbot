@@ -10,7 +10,7 @@ const ffmpegPath = require('ffmpeg-static');
 
 const execFileAsync = promisify(execFile);
 
-async function webp2mp4File(source) {
+async function convertWebpToMp4(source) {
   const output = path.join(os.tmpdir(), `${randomUUID()}.mp4`);
 
   try {
@@ -27,4 +27,4 @@ async function webp2mp4File(source) {
   }
 }
 
-module.exports = { webp2mp4File };
+module.exports = { convertWebpToMp4 };

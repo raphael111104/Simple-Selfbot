@@ -2,6 +2,8 @@
 
 const { randomUUID } = require('crypto');
 
+const FAKE_LOCATION_THUMBNAIL_WIDTH = 64;
+
 function parseNativeFlowResponse(message = {}) {
   const paramsJson = message?.interactiveResponseMessage
     ?.nativeFlowResponseMessage?.paramsJson;
@@ -28,6 +30,60 @@ function validateButtons(buttons) {
   }
 }
 
+function validateLocation(location) {
+  if (!location) return;
+
+  const hasLatitude = location.degreesLatitude != null;
+  const hasLongitude = location.degreesLongitude != null;
+  if (hasLatitude !== hasLongitude) {
+    throw new Error('Latitude dan longitude fake location harus diisi bersamaan.');
+  }
+
+  if (hasLatitude && (
+    !Number.isFinite(location.degreesLatitude)
+    || !Number.isFinite(location.degreesLongitude)
+  )) {
+    throw new Error('Koordinat fake location harus berupa angka yang valid.');
+  }
+
+  if (!Buffer.isBuffer(location.jpegThumbnail) || location.jpegThumbnail.length === 0) {
+    throw new Error('Fake location wajib memiliki jpegThumbnail yang valid.');
+  }
+}
+
+async function buildFakeLocationQuote({
+  extractImageThumb,
+  generateMessageIDV2,
+  location,
+  proto,
+  title,
+  userJid
+}) {
+  const { buffer: jpegThumbnail } = await extractImageThumb(
+    location.jpegThumbnail,
+    FAKE_LOCATION_THUMBNAIL_WIDTH
+  );
+
+  return {
+    key: {
+      // Synthetic status quote is the established fake-location shape and avoids PN/LID mapping.
+      remoteJid: 'status@broadcast',
+      fromMe: false,
+      participant: '0@s.whatsapp.net',
+      id: generateMessageIDV2(userJid)
+    },
+    message: {
+      locationMessage: proto.Message.LocationMessage.create({
+        degreesLatitude: location.degreesLatitude,
+        degreesLongitude: location.degreesLongitude,
+        name: location.name || title,
+        address: location.address || '',
+        jpegThumbnail
+      })
+    }
+  };
+}
+
 function buildInteractiveBizNode() {
   return {
     tag: 'biz',
@@ -48,19 +104,33 @@ function buildInteractiveBizNode() {
 }
 
 async function sendQuickReplyButtons(conn, jid, options = {}) {
-  const { title = '', text = '', footer = '', buttons = [], quoted } = options;
+  const { title = '', text = '', footer = '', buttons = [], location, quoted } = options;
   validateButtons(buttons);
+  validateLocation(location);
 
   if (!conn?.relayMessage || !conn?.user?.id) {
     throw new Error('Koneksi Baileys tidak siap untuk mengirim quick-reply button.');
   }
 
   const {
+    extractImageThumb,
     generateMessageIDV2,
     generateWAMessageFromContent,
     jidNormalizedUser,
     proto
   } = await import('baileys');
+  const userJid = jidNormalizedUser(conn.user.id);
+  const messageQuote = location
+    ? await buildFakeLocationQuote({
+      extractImageThumb,
+      generateMessageIDV2,
+      location,
+      proto,
+      title,
+      userJid
+    })
+    : quoted;
+
   const interactiveMessage = proto.Message.InteractiveMessage.create({
     header: proto.Message.InteractiveMessage.Header.create({
       title,
@@ -86,11 +156,10 @@ async function sendQuickReplyButtons(conn, jid, options = {}) {
     })
   });
 
-  const userJid = jidNormalizedUser(conn.user.id);
   const messageId = generateMessageIDV2(userJid);
   const message = generateWAMessageFromContent(jid, { interactiveMessage }, {
     userJid,
-    quoted,
+    quoted: messageQuote,
     messageId
   });
 
@@ -101,4 +170,9 @@ async function sendQuickReplyButtons(conn, jid, options = {}) {
   return message;
 }
 
-module.exports = { buildInteractiveBizNode, parseNativeFlowResponse, sendQuickReplyButtons };
+module.exports = {
+  FAKE_LOCATION_THUMBNAIL_WIDTH,
+  buildInteractiveBizNode,
+  parseNativeFlowResponse,
+  sendQuickReplyButtons
+};
