@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node main.js",
     "start:qr": "node main.js --qr",
-    "check": "node --check main.js && node --check conn.js && node --check function/profile-picture.js && node --check function/sticker.js && node --check function/youtube.js",
+    "check": "node --check main.js && node --check conn.js && node --check function/profile-picture.js && node --check function/sticker.js && node --check function/youtube.js && node --check function/instagram.js && node --check function/album.js",
+    "test": "node --test",
     "postinstall": "node scripts/verify-binaries.js"
   },
   "author": "Rafli A.",

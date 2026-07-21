@@ -50,7 +50,10 @@ Perintah utama:
 ```text
 !menu
 !menu owner
+!instagram https://www.instagram.com/reel/...
 ```
+
+Downloader Instagram juga dapat dipanggil melalui `!ig` atau `!igdl`. Post gambar dikirim sebagai gambar, Reel/video dikirim sebagai video, dan carousel yang seluruh medianya berupa gambar dikirim sebagai album native WhatsApp. Carousel campuran gambar/video tetap dikirim berurutan sesuai jenis setiap medianya. Link Story dan akun private tidak didukung.
 
 Perintah `!setppbot` dan `!setppgc` mempertahankan rasio gambar asli. Gambar portrait atau landscape tidak dipotong otomatis menjadi rasio 1:1 sebelum dikirim ke WhatsApp.
 

@@ -12,6 +12,8 @@ const { webp2mp4File } = require("./function/Webp_Tomp4")
 //module
 const { File } = require("megajs")
 const { downloadYouTube, searchYouTube } = require('./function/youtube')
+const { downloadInstagram } = require('./function/instagram')
+const { sendImageAlbum } = require('./function/album')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
@@ -403,6 +405,7 @@ module.exports = async (conn, msg, m, setting, store) => {
 
 _Device Specs Server:_
 • OS Host : ${osPlatform} (${os.arch()})
+• CPU Model : ${cpuModel}
 • CPU Cores : ${cpuCores} Core(s)
 • RAM Usage : ${usedRam} GB / ${totalRam} GB
 • Hostname : ${os.hostname()}
@@ -462,6 +465,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
           cptn += `• ${prefix}ytmp3\n`
           cptn += `• ${prefix}ytmp4\n`
           cptn += `• ${prefix}tiktok\n`
+          cptn += `• ${prefix}instagram\n`
           cptn += `• ${prefix}mediafire\n`
           cptn += `• ${prefix}mega\n\n`
           cptn += `_Tools_\n`
@@ -595,6 +599,64 @@ https://github.com/dragneel1111/Simple-Selfbot`
             { quoted: msg })
         }
         break
+
+      case 'instagram':
+      case 'ig':
+      case 'igdl': {
+        if (!q) return reply(`example:\n${prefix + command} https://www.instagram.com/reel/ABC123/`)
+
+        let instagramResult
+        try {
+          instagramResult = await downloadInstagram(q)
+          const { items, postInfo } = instagramResult
+          const mediaLabel = instagramResult.kind === 'carousel'
+            ? 'Carousel'
+            : instagramResult.kind === 'reel' ? 'Reel/Video' : 'Post'
+          let caption = `*INSTAGRAM DOWNLOADER*\n\n• Type: ${mediaLabel}\n• Media: ${items.length}`
+          if (postInfo.username) caption += `\n• Owner: @${postInfo.username}`
+          if (postInfo.caption) caption += `\n\n${postInfo.caption.slice(0, 800)}`
+
+          await adReply(`Ditemukan ${items.length} media. Sedang mengirim...`, mediaLabel, 'Instagram Downloader', msg)
+
+          const sendRegularItem = async (index) => {
+            const item = items[index]
+            const itemCaption = index === 0
+              ? caption
+              : `Instagram ${index + 1}/${items.length}`
+            await conn.sendMessage(from, {
+              [item.type]: { url: item.source },
+              caption: itemCaption
+            }, { quoted: msg })
+            if (index < items.length - 1) await sleep(300)
+          }
+
+          const isImageAlbum = items.length > 1 && items.every(item => item.type === 'image')
+          if (isImageAlbum) {
+            try {
+              await sendImageAlbum(conn, from, items, { caption, quoted: msg })
+            } catch (albumError) {
+              const fallbackIndex = Math.min(
+                Math.max(Number(albumError.sentChildCount) || 0, 0),
+                items.length
+              )
+              console.warn(`[INSTAGRAM ALBUM FALLBACK] ${albumError.message}. Mengirim mulai media ke-${fallbackIndex + 1} secara biasa.`)
+              for (let index = fallbackIndex; index < items.length; index++) {
+                await sendRegularItem(index)
+              }
+            }
+          } else {
+            for (let index = 0; index < items.length; index++) {
+              await sendRegularItem(index)
+            }
+          }
+        } catch (error) {
+          console.error('[INSTAGRAM DOWNLOAD ERROR]', error)
+          reply(error.message || 'Instagram media gagal diunduh.')
+        } finally {
+          instagramResult?.cleanup?.()
+        }
+        break
+      }
 
       case 'mediafire':
         if (!q) return reply('*example:*\n#mediafire https://www.mediafire.com/file/451l493otr6zca4/V4.zip/file')
@@ -818,7 +880,7 @@ _Wait Mengirim file..._
 • *ID:* ${from}
 • *Name:* ${groupName}
 • *Member:* ${groupMembers.length}
-• *Total Admin:* ${groupAdmins.length}
+• *Total Admin:* ${groupAdmra.length}
 • *Description:*\n ${groupMetadata.desc}
 `
         await conn.sendMessage(from, {
