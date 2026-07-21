@@ -14,6 +14,7 @@ const { File } = require("megajs")
 const { downloadYouTube, searchYouTube } = require('./function/youtube')
 const { downloadInstagram } = require('./function/instagram')
 const { sendImageAlbum } = require('./function/album')
+const { parseNativeFlowResponse, sendQuickReplyButtons } = require('./function/buttons')
 const { updateFullProfilePicture } = require('./function/profile-picture')
 
 const fs = require("fs");
@@ -55,7 +56,9 @@ module.exports = async (conn, msg, m, setting, store) => {
                 ? msg.message.templateButtonReplyMessage.selectedId
                 : (type === 'listResponseMessage') && quotedMsg?.fromMe && msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId
                   ? msg.message.listResponseMessage.singleSelectReply.selectedRowId
-                  : (msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "")
+                  : (type === 'interactiveResponseMessage')
+                    ? parseNativeFlowResponse(msg.message)
+                    : (msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || msg.message?.videoMessage?.caption || "")
     if (!chats) { chats = '' }
     const prefix = setting.prefix
     const isGroup = msg.key.remoteJid.endsWith('@g.us')
@@ -173,7 +176,13 @@ module.exports = async (conn, msg, m, setting, store) => {
     const senderName = pushname || (msg.key.fromMe ? (setting.ownerName || 'Owner') : 'User')
     const senderPhoneNumber = senderPhone || 'N/A'
     const senderIdNum = rawLidId || (initialSender ? initialSender.split('@')[0].split(':')[0] : 'N/A')
-    const body = chats.startsWith(prefix) ? chats : ''
+    const normalizedChats = chats.trim()
+    const isPrefixlessTest = normalizedChats.toLowerCase() === 'test'
+    const body = chats.startsWith(prefix)
+      ? chats
+      : isPrefixlessTest
+        ? `${prefix}test`
+        : ''
     const args = body.trim().split(/ +/).slice(1);
     const q = args.join(" ");
     const isCommand = body.startsWith(prefix);
@@ -387,36 +396,6 @@ module.exports = async (conn, msg, m, setting, store) => {
       }
     }
 
-    if (chats.toLowerCase() === 'test' || chats.toLowerCase() === `${prefix}test`) {
-      const totalRam = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(2);
-      const freeRam = (os.freemem() / (1024 * 1024 * 1024)).toFixed(2);
-      const usedRam = (totalRam - freeRam).toFixed(2);
-      const cpuModel = os.cpus()?.[0]?.model?.trim() || 'Unknown CPU';
-      const cpuCores = os.cpus()?.length || 0;
-      const osPlatform = os.platform() === 'win32' ? 'Windows' : os.platform() === 'darwin' ? 'macOS' : 'Linux';
-
-      const testCaption = `*SELFBOT ONLINE* ✅
-
-• Botname : ${setting.botName}
-• Library : Baileys
-• Prefix : ${prefix}
-• Creator : ${setting.ownerName}
-• Runtime : ${runtime(process.uptime())}
-
-_Device Specs Server:_
-• OS Host : ${osPlatform} (${os.arch()})
-• CPU Model : ${cpuModel}
-• CPU Cores : ${cpuCores} Core(s)
-• RAM Usage : ${usedRam} GB / ${totalRam} GB
-• Hostname : ${os.hostname()}
-
-• Source Code :
-https://github.com/dragneel1111/Simple-Selfbot`
-
-      adReply(testCaption, `${tanggal}`, `${jam}`)
-      console.log(color(`[ SELFBOT ONLINE || RUNTIME: ${runtime(process.uptime())} ] ${tanggal}`, 'cyan'))
-    }
-
     switch (command) {
 
       case 'test':
@@ -437,6 +416,7 @@ https://github.com/dragneel1111/Simple-Selfbot`
 
 _Device Specs Server:_
 • OS Host : ${osPlatform} (${os.arch()})
+• CPU Model : ${cpuModel}
 • CPU Cores : ${cpuCores} Core(s)
 • RAM Usage : ${usedRam} GB / ${totalRam} GB
 • Hostname : ${os.hostname()}
@@ -444,7 +424,20 @@ _Device Specs Server:_
 • Source Code :
 https://github.com/dragneel1111/Simple-Selfbot`
 
-        adReply(testCaptionCmd, `${tanggal}`, `${jam}`)
+        try {
+          await sendQuickReplyButtons(conn, from, {
+            title: setting.botName,
+            text: testCaptionCmd,
+            footer: setting.wm,
+            buttons: [
+              { id: `${prefix}menu`, text: 'Menu' },
+              { id: `${prefix}creator`, text: 'Creator' }
+            ]
+          })
+        } catch (error) {
+          console.error('[TEST BUTTON ERROR]', error)
+          await adReply(testCaptionCmd, `${tanggal}`, `${jam}`, msg)
+        }
         console.log(color(`[ SELFBOT ONLINE || RUNTIME: ${runtime(process.uptime())} ] ${tanggal}`, 'cyan'))
         break
 
@@ -491,6 +484,10 @@ https://github.com/dragneel1111/Simple-Selfbot`
           cptn += `• ${prefix}delrespon\n`
           adReply(cptn, tanggal, jam)
         }
+        break
+
+      case 'creator':
+        await sendContact(from, setting.ownerNumber, setting.ownerName, msg)
         break
 
       // DOWNLOADER

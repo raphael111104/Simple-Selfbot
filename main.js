@@ -104,7 +104,8 @@ async function connectToWhatsApp() {
     downloadContentFromMessage,
     jidDecode,
     makeCacheableSignalKeyStore,
-    useMultiFileAuthState
+    useMultiFileAuthState,
+    WAMessageStatus
   } = baileys;
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
@@ -127,6 +128,17 @@ async function connectToWhatsApp() {
   if (useStore) Memory_Store.bind(conn.ev);
 
   conn.ev.on('creds.update', saveCreds);
+
+  conn.ev.on('messages.update', updates => {
+    for (const { key, update } of updates || []) {
+      if (update?.status !== WAMessageStatus.ERROR) continue;
+
+      const errorCode = update.messageStubParameters?.join(', ') || 'unknown';
+      console.error(chalk.red(
+        `[MESSAGE DELIVERY ERROR] ID: ${key?.id || '-'} | TO: ${key?.remoteJid || '-'} | CODE: ${errorCode}`
+      ));
+    }
+  });
 
   conn.ev.on('connection.update', async update => {
     if (!state.creds.registered) {
