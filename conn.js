@@ -21,6 +21,7 @@ const axios = require("axios");
 const moment = require("moment-timezone");
 const util = require("util");
 const { createSticker } = require('./function/sticker');
+const os = require("os");
 
 
 // DB
@@ -115,9 +116,9 @@ module.exports = async (conn, msg, m, setting, store) => {
           const found = groupList.find(p => {
             const pId = p.id ? (conn.decodeJid(p.id) || p.id) : '';
             const pLid = p.lid ? (conn.decodeJid(p.lid) || p.lid) : '';
-            return pId === candidate || pLid === candidate || 
-                   (pId && pId.split('@')[0] === candNum) ||
-                   (pLid && pLid.split('@')[0] === candNum);
+            return pId === candidate || pLid === candidate ||
+              (pId && pId.split('@')[0] === candNum) ||
+              (pLid && pLid.split('@')[0] === candNum);
           });
 
           if (found) {
@@ -384,22 +385,65 @@ module.exports = async (conn, msg, m, setting, store) => {
       }
     }
 
-    if (chats.startsWith("Test")) {
-      adReply(`*SELFBOT ONLINE* ✅
+    if (chats.toLowerCase() === 'test' || chats.toLowerCase() === `${prefix}test`) {
+      const totalRam = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(2);
+      const freeRam = (os.freemem() / (1024 * 1024 * 1024)).toFixed(2);
+      const usedRam = (totalRam - freeRam).toFixed(2);
+      const cpuModel = os.cpus()?.[0]?.model?.trim() || 'Unknown CPU';
+      const cpuCores = os.cpus()?.length || 0;
+      const osPlatform = os.platform() === 'win32' ? 'Windows' : os.platform() === 'darwin' ? 'macOS' : 'Linux';
+
+      const testCaption = `*SELFBOT ONLINE* ✅
 
 • Botname : ${setting.botName}
 • Library : Baileys
 • Prefix : ${prefix}
 • Creator : ${setting.ownerName}
 • Runtime : ${runtime(process.uptime())}
+
+_Device Specs Server:_
+• OS Host : ${osPlatform} (${os.arch()})
+• CPU Cores : ${cpuCores} Core(s)
+• RAM Usage : ${usedRam} GB / ${totalRam} GB
+• Hostname : ${os.hostname()}
+
 • Source Code :
-https://github.com/dragneel1111/Simple-Selfbot
-`,
-        `${tanggal}`, `${jam}`)
+https://github.com/dragneel1111/Simple-Selfbot`
+
+      adReply(testCaption, `${tanggal}`, `${jam}`)
       console.log(color(`[ SELFBOT ONLINE || RUNTIME: ${runtime(process.uptime())} ] ${tanggal}`, 'cyan'))
     }
 
     switch (command) {
+
+      case 'test':
+        const totalRam = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(2);
+        const freeRam = (os.freemem() / (1024 * 1024 * 1024)).toFixed(2);
+        const usedRam = (totalRam - freeRam).toFixed(2);
+        const cpuModel = os.cpus()?.[0]?.model?.trim() || 'Unknown CPU';
+        const cpuCores = os.cpus()?.length || 0;
+        const osPlatform = os.platform() === 'win32' ? 'Windows' : os.platform() === 'darwin' ? 'macOS' : 'Linux';
+
+        const testCaptionCmd = `*SELFBOT ONLINE* ✅
+
+• Botname : ${setting.botName}
+• Library : Baileys
+• Prefix : ${prefix}
+• Creator : ${setting.ownerName}
+• Runtime : ${runtime(process.uptime())}
+
+_Device Specs Server:_
+• OS Host : ${osPlatform} (${os.arch()})
+• CPU Cores : ${cpuCores} Core(s)
+• RAM Usage : ${usedRam} GB / ${totalRam} GB
+• Hostname : ${os.hostname()}
+
+• Source Code :
+https://github.com/dragneel1111/Simple-Selfbot`
+
+        adReply(testCaptionCmd, `${tanggal}`, `${jam}`)
+        console.log(color(`[ SELFBOT ONLINE || RUNTIME: ${runtime(process.uptime())} ] ${tanggal}`, 'cyan'))
+        break
 
       case 'menu': case 'help':
         if (!q) {
@@ -426,7 +470,6 @@ https://github.com/dragneel1111/Simple-Selfbot
           cptn += `• ${prefix}infogroup\n`
           cptn += `• ${prefix}reply\n`
           cptn += `• ${prefix}fakeorder\n`
-          cptn += `• ${prefix}fakelocation\n`
           cptn += `• ${prefix}forward\n`
           cptn += `• ${prefix}readmore\n`
           cptn += `• ${prefix}hidetag\n\n`
@@ -716,19 +759,6 @@ _Wait Mengirim file..._
             sellerJid: '0@s.whatsapp.net',
             totalAmount1000: 999000,
             totalCurrencyCode: 'IDR',
-            jpegThumbnail: fs.existsSync('./sticker/thumb.jpg') ? fs.readFileSync('./sticker/thumb.jpg') : null
-          }
-        }, { quoted: msg })
-        break
-
-      case 'fakeloc':
-      case 'fakelocation':
-        conn.sendMessage(from, {
-          location: {
-            degreesLatitude: -6.200000,
-            degreesLongitude: 106.816666,
-            name: q ? q : setting.wm,
-            address: 'Jakarta, Indonesia',
             jpegThumbnail: fs.existsSync('./sticker/thumb.jpg') ? fs.readFileSync('./sticker/thumb.jpg') : null
           }
         }, { quoted: msg })
